@@ -5,4 +5,5 @@ product = {
         "price": {"type": "number"},
         "name": {"type": "string"},
     },
+    "additionalProperties": False
 }

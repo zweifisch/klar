@@ -1,6 +1,5 @@
-
 from klar import App
-# from .schema import product
+from schema import product
 
 app = App()
 
@@ -17,12 +16,12 @@ def json():
     return {'ok': True}
 
 @app.get('/add/<n>/<n2>')
-def json(n:int, n2:int):
+def json(n: int, n2: int):
     return {"result": n + n2}
 
-# @app.post('/product')
-# def create_product(body: product):
-#     return {product: product}
+@app.post('/product')
+def create_product(body: product):
+    return {"product": body}
 
 if '__main__' == __name__:
     app.run()

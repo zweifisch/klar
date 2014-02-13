@@ -17,7 +17,7 @@ if __name__ == '__main__':
 
 *needs python3*
 
-```py
+```python
 @app.get('/add/<n>/<n2>')
 def hello(n:int, n2:int):
 	return n + n2
@@ -25,7 +25,7 @@ def hello(n:int, n2:int):
 
 ### custom type
 
-```py
+```python
 product = {
 	"type": "object"
 }
@@ -43,7 +43,7 @@ def function(errors, request):
 
 ## restful
 
-```py
+```python
 from .resource import product, catalog
 
 app = App()
@@ -56,11 +56,11 @@ if __name__ == '__main__':
 
 resource/product.py
 
-```py
-from klar import transform
+```python
+from klar import transformer
 from .schemas import product
 
-@transform
+@transformer
 def filters(input):
 	return {} if input not instanceof list
 	input = (x.split(':') for x in input if 2 == len(x.split(':')))
@@ -76,4 +76,43 @@ def show(id: string):
 def list(shift: int, limit: int, filter: filters, db):
 	criteria = map(filters, 
 	products = db.products.find(filter).skip(shift).limit(shift)
+```
+
+## event
+
+```python
+@on(404)
+def not_found(request): ->
+	return 'not found'
+```
+
+## template rendering
+
+```python
+from .template import home
+
+@app.get('/') -> home :
+	return {"key": "value"}
+```
+
+```python
+```
+
+## api mockup
+
+```python
+app = App()
+
+resource = {
+	"ok": True,
+	"name": "res0",
+	"property": "value",
+}
+
+@app.get(/resource/<id>)
+def resource(id: int) -> resource :
+	pass
+
+if __name__ == '__main__':
+	app.run(allow_mockup=True)
 ```

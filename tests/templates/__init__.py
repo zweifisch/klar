@@ -1,1 +1,2 @@
-from .index import index
+from .index import *
+from .test import *

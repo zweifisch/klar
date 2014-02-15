@@ -39,7 +39,7 @@ locals().update(root)
 class TemplateImporter(BaseImporter):
     code_template = """
 from cgi import escape
-def %(fn)s(kvs):
+def tmpl_%(fn)s(kvs):
     return \"\"\"%(template)s\"\"\" %% {k: escape(v) for k, v in kvs.items()}
 """
 

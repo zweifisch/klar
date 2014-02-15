@@ -38,7 +38,8 @@ def post(**kwargs):
     defaults['body'] = parse.urlencode(defaults['body'])
     return request(**defaults)
 
-def get(**kwargs):
+def get(app, path, query={}, **kwargs):
+    kwargs.update({"app": app, "path": path, "query": query})
     defaults = {
         "method": "GET",
         "content_type": ""

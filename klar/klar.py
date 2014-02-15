@@ -9,8 +9,6 @@ from urllib import parse
 from jsonschema import validate
 from jsonschema.exceptions import ValidationError, SchemaError
 
-from .importers import JsonImporter, TemplateImporter, install
-
 class App:
 
     def __init__(self):
@@ -66,9 +64,6 @@ class App:
         body = ''
         if handler:
             status = 200
-            return_anno = handler.__annotations__.get('return')
-            if self.mockup and type(return_anno) is dict:
-                return 200, return_anno
             params = dict(self.request.query, **params)
             try:
                 prepared_params = self.prepare_params(handler, params)
@@ -80,8 +75,12 @@ class App:
                 response = handler(**prepared_params)
             except Exception as e:
                 return 500, [], str(e)
+            return_anno = handler.__annotations__.get('return')
             if callable(return_anno):
                 response = return_anno(response)
+            elif type(return_anno) is tuple:
+                for post_processer in return_anno:
+                    response = post_processer(*response)
             if tuple == type(response):
                 for item in response:
                     if type(item) is tuple:
@@ -319,9 +318,3 @@ def get_status(code):
         503: '503 Service Unavailable',
         504: '504 Gateway Timeout',
         505: '505 HTTP Version Not Supported'}.get(code)
-
-def install_impoters(jsonimporter='.json', templateimporter=".html"):
-    if jsonimporter:
-        install(JsonImporter(ext=jsonimporter))
-    if templateimporter:
-        install(TemplateImporter(ext=templateimporter))

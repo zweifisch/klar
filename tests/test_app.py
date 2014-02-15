@@ -2,8 +2,16 @@ from klar import App
 from request import get, json_request
 import json
 
-
 class TestApp:
+
+    def test_hello(self):
+        app = App()
+
+        @app.get('/hello/<name>')
+        def hello(name: str, times: int = 1):
+            return "hello " * times + name
+
+        assert get(app, '/hello/klar', {"times": 2})['body'] == "hello hello klar"
 
     def test_routing(self):
         app = App()
@@ -65,3 +73,14 @@ class TestApp:
         assert get(app=app, path='/test/200')['body'] == '200'
 
         assert get(app=app, path='/test/200', query={"foo": 1})['body'] == '201'
+
+    def test_template_rendering(self):
+        app = App()
+
+        from templates import tmpl_test
+
+        @app.get('/test')
+        def test(key) -> tmpl_test:
+            return {"key": key}
+
+        assert get(app, '/test', {"key": "foo"})['body'] == "key is foo\n"

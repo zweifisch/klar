@@ -5,11 +5,11 @@ import os
 import json
 from functools import partial
 from urllib import parse
-from cgi import escape
 
 from jsonschema import validate
 from jsonschema.exceptions import ValidationError, SchemaError
 
+from .importers import JsonImporter, TemplateImporter, install
 
 class App:
 
@@ -17,7 +17,6 @@ class App:
         self.provider = Provider(
             router=Router,
             request=Request,
-            response=Response,
         )
 
         @self.provide('body')
@@ -57,7 +56,7 @@ class App:
             body = json.dumps(body)
             headers = {'Content-Type': 'application/json; charset=utf-8'}
         default_headers.update(headers)
-        return self.response.status(status), list(default_headers.items()), body
+        return get_status(status), list(default_headers.items()), body
 
     def process_request(self):
         handler, params = self.router.dispatch(self.request.method,
@@ -237,68 +236,6 @@ class Request:
         return self.environ['REQUEST_METHOD'].upper()
 
 
-class Response:
-
-    @staticmethod
-    def status(code):
-        return {
-            200: '200 OK',
-            201: '201 Created',
-            202: '202 Accepted',
-            203: '203 Non-Authoritative Information',
-            204: '204 No Content',
-            205: '205 Reset Content',
-            206: '206 Partial Content',
-            300: '300 Multiple Choices',
-            301: '301 Moved Permanently',
-            302: '302 Found',
-            304: '304 Not Modified',
-            305: '305 Use Proxy',
-            307: '307 Temporary Redirect',
-            400: '400 Bad Request',
-            401: '401 Unauthorized',
-            403: '403 Forbidden',
-            404: '404 Not Found',
-            405: '405 Method Not Allowed',
-            406: '406 Not Acceptable',
-            407: '407 Proxy Authentication Required',
-            408: '408 Request Timeout',
-            409: '409 Conflict',
-            410: '410 Gone',
-            411: '411 Length Required',
-            412: '412 Precondition Failed',
-            413: '413 Request Entity Too Large',
-            414: '414 Request-URI Too Long',
-            415: '415 Unsupported Media Type',
-            416: '416 Requested Range Not Satisfiable',
-            417: '417 Expectation Failed',
-            500: '500 Internal Server Error',
-            501: '501 Not Implemented',
-            502: '502 Bad Gateway',
-            503: '503 Service Unavailable',
-            504: '504 Gateway Timeout',
-            505: '505 HTTP Version Not Supported'}.get(code)
-
-
-class View:
-
-    def __init__(self, root, ext='.html'):
-        self.cached = {}
-        self.root = root
-        self.ext = ext
-
-    def render(self, name, kvs):
-        template = self.get_template(name)
-        return template % {k: escape(v) for k, v in kvs.items()}
-
-    def get_template(self, name):
-        if name not in self.cached:
-            with open(os.path.join(self.root, name) + self.ext) as f:
-                html = f.read()
-                self.cached[name] = re.sub(r'<%\s*(\w+)\s*%>', '%(\\1)s', html)
-        return self.cached[name]
-
-
 class EventEmitter:
 
     def trigger(self, event, **kargs):
@@ -343,3 +280,48 @@ def get_args(fn):
     sig = inspect.signature(fn)
     return [p.name for p in sig.parameters.values()
             if p.kind is p.POSITIONAL_OR_KEYWORD]
+
+def get_status(code):
+    return {
+        200: '200 OK',
+        201: '201 Created',
+        202: '202 Accepted',
+        203: '203 Non-Authoritative Information',
+        204: '204 No Content',
+        205: '205 Reset Content',
+        206: '206 Partial Content',
+        300: '300 Multiple Choices',
+        301: '301 Moved Permanently',
+        302: '302 Found',
+        304: '304 Not Modified',
+        305: '305 Use Proxy',
+        307: '307 Temporary Redirect',
+        400: '400 Bad Request',
+        401: '401 Unauthorized',
+        403: '403 Forbidden',
+        404: '404 Not Found',
+        405: '405 Method Not Allowed',
+        406: '406 Not Acceptable',
+        407: '407 Proxy Authentication Required',
+        408: '408 Request Timeout',
+        409: '409 Conflict',
+        410: '410 Gone',
+        411: '411 Length Required',
+        412: '412 Precondition Failed',
+        413: '413 Request Entity Too Large',
+        414: '414 Request-URI Too Long',
+        415: '415 Unsupported Media Type',
+        416: '416 Requested Range Not Satisfiable',
+        417: '417 Expectation Failed',
+        500: '500 Internal Server Error',
+        501: '501 Not Implemented',
+        502: '502 Bad Gateway',
+        503: '503 Service Unavailable',
+        504: '504 Gateway Timeout',
+        505: '505 HTTP Version Not Supported'}.get(code)
+
+def install_impoters(jsonimporter='.json', templateimporter=".html"):
+    if jsonimporter:
+        install(JsonImporter(ext=jsonimporter))
+    if templateimporter:
+        install(TemplateImporter(ext=templateimporter))

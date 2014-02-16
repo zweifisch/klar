@@ -3,8 +3,10 @@ import inspect
 import re
 import os
 import json
+import time
 from functools import partial
 from urllib import parse
+from http.cookies import SimpleCookie
 
 from jsonschema import validate
 from jsonschema.exceptions import ValidationError, SchemaError
@@ -15,6 +17,7 @@ class App:
         self.provider = Provider(
             router=Router,
             request=Request,
+            cookies=Cookies
         )
 
         @self.provide('body')
@@ -23,12 +26,9 @@ class App:
 
     def __getattr__(self, name):
         if name in ['get', 'post', 'delete', 'put', 'patch']:
-            return partial(self.router.add_rule, name)
-        elif self.provider.registered(name):
-            component = getattr(self.provider, name)
-            if not component:
-                raise "failed to provide %s" % name
-            return component
+            return partial(self.provider.router.add_rule, name)
+        else:
+            raise HttpError(500, "method %s not exists" % name)
 
     def __call__(self, environ, start_response):
         self.provider.environ = environ
@@ -36,12 +36,19 @@ class App:
             status, headers, body = self.process_request()
         except HttpError as e:
             status, body = e.args
+            headers = []
         processed = self.process_hooks()
         if processed:
             status, headers, body = processed
         status, headers, body = self.format_response(status, headers, body)
+
+        cookies = self.provider.cookies.output()
+        if cookies:
+            headers.extend(cookies)
+
         del self.provider.request
         del self.provider.body
+        del self.provider.cookies
         start_response(status, headers)
         return [body.encode('utf-8')]
 
@@ -57,14 +64,14 @@ class App:
         return get_status(status), list(default_headers.items()), body
 
     def process_request(self):
-        handler, params = self.router.dispatch(self.request.method,
-                                               self.request.path)
+        handler, params = self.provider.router.dispatch(
+            self.provider.request.method, self.provider.request.path)
         headers = {}
         status = 404
         body = ''
         if handler:
             status = 200
-            params = dict(self.request.query, **params)
+            params = dict(self.provider.request.query, **params)
             try:
                 prepared_params = self.prepare_params(handler, params)
             except ValidationError as e:
@@ -233,6 +240,55 @@ class Request:
     @property
     def method(self):
         return self.environ['REQUEST_METHOD'].upper()
+
+
+class Cookies:
+
+    units = {
+        "day": 86400,
+        "days": 86400,
+        "hour": 3600,
+        "hours": 3600,
+        "minute": 60,
+        "minutes": 60,
+    }
+
+    def __init__(self, environ):
+        self.cookies = SimpleCookie()
+        if 'HTTP_COOKIE' in environ:
+            self.cookies.load(environ['HTTP_COOKIE'])
+        self.changed_keys = []
+
+    def get(self, key):
+        return self.cookies[key].value if key in self.cookies else None
+
+    def set(self, key, value, **kwargs):
+        self.cookies[key] = value
+        if 'expires' in kwargs:
+            kwargs['expires'] = time.strftime("%a, %d-%b-%Y %T GMT",
+                                              kwargs['expires'])
+        for k, v in kwargs.items():
+            self.cookies[key][k] = v
+        self.changed_keys.append(key)
+
+    def __getattr__(self, key):
+        if key.startswith('set_for_'):
+            tokens = iter(key[8:].split('_'))
+            total = 0
+            for quantity, unit in zip(tokens, tokens):
+                total += int(quantity) * self.units[unit]
+            expires = time.time() + total
+            return partial(self.set, expires=time.gmtime(expires))
+        else:
+            raise HttpError(500, '%s not exists' % key)
+
+    def delete(self, key):
+        if key in self.cookies:
+            self.set(key, '', expires=time.gmtime(0))
+
+    def output(self):
+        return [('Set-Cookie', self.cookies[key].OutputString())
+                for key in self.cookies if key in self.changed_keys]
 
 
 class EventEmitter:

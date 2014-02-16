@@ -2,21 +2,26 @@ from urllib import parse
 from io import BytesIO
 import json
 
-def request(app, path, content_type, query={}, body='', method="GET"):
+def request(app, path, content_type, query={}, body='', method="GET", cookies=[]):
     ret = {}
 
     def start_response(status, headers):
         ret["status"] = status
         ret["headers"] = headers
 
-    body = app({
+    env = {
         "REQUEST_METHOD": method,
         "PATH_INFO": path,
         "QUERY_STRING": parse.urlencode(query),
         'wsgi.input': BytesIO(bytearray(body, 'utf-8')),
         'CONTENT_LENGTH': len(body),
         'CONTENT_TYPE': content_type,
-    }, start_response)
+    }
+
+    if cookies:
+        env['HTTP_COOKIE'] = ';'.join([k + '=' + v for k, v in cookies.items()])
+
+    body = app(env, start_response)
     ret['body'] = ''.join(map(lambda x: x.decode(), body))
     return ret
 

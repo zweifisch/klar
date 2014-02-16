@@ -40,23 +40,33 @@ product = {
 }
 
 @app.post('/product')
-def create(body: product):
-	app.db.products.insert(body)
+def create(body: product, db):
+	db.products.insert(body)
 	return {"ok": True}
 ```
 
 schemas can/should be imported from json or yaml(TBD) files
 
-```python
-|--app.py
-|--schemas
-   |--product.json
 ```
+|--app.py
+|--schemas.json
+```
+
+product in schema.json
+
+```
+{
+	product: {...}
+}
+```
+
+```python
+from schemas import product
 
 @app.post('/product')
 def create(body: product):
-	app.db.products.insert(body)
-	return {"ok": True}
+	pass
+```
 
 ## dependency injection
 

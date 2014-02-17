@@ -1,9 +1,9 @@
 import types
 import inspect
 import re
-import os
 import json
-import time
+import random
+import traceback
 from functools import partial
 from urllib import parse
 from http.cookies import SimpleCookie
@@ -17,7 +17,10 @@ class App:
         self.provider = Provider(
             router=Router,
             request=Request,
-            cookies=Cookies
+            cookies=Cookies,
+            cache=Cache,
+            session=Session,
+            response=Response,
         )
 
         @self.provide('body')
@@ -25,7 +28,7 @@ class App:
             return request.body
 
     def __getattr__(self, name):
-        if name in ['get', 'post', 'delete', 'put', 'patch']:
+        if name in ['get', 'post', 'delete', 'put', 'patch', 'head']:
             return partial(self.provider.router.add_rule, name)
         else:
             raise HttpError(500, "method %s not exists" % name)
@@ -33,31 +36,36 @@ class App:
     def __call__(self, environ, start_response):
         self.provider.environ = environ
         try:
-            status, headers, body = self.process_request()
+            code, headers, body = self.process_request()
         except HttpError as e:
-            status, body = e.args
+            code, body = e.args
             headers = []
         processed = self.process_hooks()
         if processed:
-            status, headers, body = processed
-        status, headers, body = self.format_response(status, headers, body)
+            code, headers, body = processed
+        status, headers, body = self.format_response(code, headers, body)
 
-        cookies = self.provider.cookies.output()
-        if cookies:
-            headers.extend(cookies)
+        if code != 500:
+            self.provider.session.flush()
+            cookies = self.provider.cookies.output()
+            if cookies:
+                headers.extend(cookies)
 
         del self.provider.request
         del self.provider.body
         del self.provider.cookies
+        del self.provider.session
         start_response(status, headers)
-        return [body.encode('utf-8')]
+        if type(body) is str:
+            body = body.encode('utf-8')
+        return [body]
 
     def process_hooks(self):
         pass
 
     def format_response(self, status, headers, body):
         default_headers = {'Content-Type': 'text/html; charset=utf-8'}
-        if type(body) is not str:
+        if type(body) not in [str, bytes]:
             body = json.dumps(body)
             headers = {'Content-Type': 'application/json; charset=utf-8'}
         default_headers.update(headers)
@@ -81,7 +89,7 @@ class App:
             try:
                 response = handler(**prepared_params)
             except Exception as e:
-                return 500, [], str(e)
+                return 500, [], traceback.format_exc()
             return_anno = handler.__annotations__.get('return')
             if callable(return_anno):
                 response = return_anno(response)
@@ -102,11 +110,10 @@ class App:
         return status, headers, body
 
     def prepare_params(self, handler, params):
-        ret = {}
         args, *_ = inspect.getargs(handler.__code__)
         params = dict(get_arg_defaults(handler), **params)
         for name in args:
-            if self.provider.registered(name):
+            if hasattr(self.provider, name):
                 params[name] = getattr(self.provider, name)
 
             if name not in params:
@@ -151,7 +158,7 @@ class Provider:
 
     def __getattr__(self, name):
         if name not in self.protos:
-            raise Exception("%s not registered" % name)
+            raise AttributeError("%s not registered" % name)
         elif type(self.protos[name]) is tuple:
             cls, params = self.protos[name]
             self.__dict__[name] = instance(cls, params, self)
@@ -167,9 +174,6 @@ class Provider:
 
     def register(self, name, value):
         self.protos[name] = value
-
-    def registered(self, name):
-        return name in self.protos or name in self.__dict__
 
 
 class Router:
@@ -259,14 +263,11 @@ class Cookies:
             self.cookies.load(environ['HTTP_COOKIE'])
         self.changed_keys = []
 
-    def get(self, key):
-        return self.cookies[key].value if key in self.cookies else None
+    def get(self, key, default=None):
+        return self.cookies[key].value if key in self.cookies else default
 
     def set(self, key, value, **kwargs):
         self.cookies[key] = value
-        if 'expires' in kwargs:
-            kwargs['expires'] = time.strftime("%a, %d-%b-%Y %T GMT",
-                                              kwargs['expires'])
         for k, v in kwargs.items():
             self.cookies[key][k] = v
         self.changed_keys.append(key)
@@ -277,24 +278,98 @@ class Cookies:
             total = 0
             for quantity, unit in zip(tokens, tokens):
                 total += int(quantity) * self.units[unit]
-            expires = time.time() + total
-            return partial(self.set, expires=time.gmtime(expires))
+            return partial(self.set, expires=int(total))
         else:
             raise HttpError(500, '%s not exists' % key)
 
     def delete(self, key):
         if key in self.cookies:
-            self.set(key, '', expires=time.gmtime(0))
+            self.set(key, '', expires='Thu, 01 Jan 1970 00:00:00 GMT')
 
     def output(self):
         return [('Set-Cookie', self.cookies[key].OutputString())
                 for key in self.cookies if key in self.changed_keys]
 
 
+class Session:
+
+    chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-'
+
+    def __init__(self, cookies, cache, sid_key='ksid', key_len=16,
+                 key_prefix='sid:'):
+        self.cache = cache
+        self.cookies = cookies
+        self.sid_key = sid_key
+        self.key_len = key_len
+        self.key_prefix = key_prefix
+
+        sid = self.cookies.get(sid_key)
+        self.data = {}
+        if sid and self.load(sid):
+            self._sid = sid
+        self.is_dirty = False
+
+    @property
+    def sid(self):
+        if not hasattr(self, '_sid'):
+            self._sid = ''.join(random.choice(self.chars)
+                                for i in range(self.key_len))
+            self.cookies.set(self.sid_key, self._sid, httponly=True)
+        return self._sid
+
+    def load(self, sid):
+        data = self.cache.get(self.key_prefix + sid)
+        self.data = data or {}
+        return data
+
+    def get(self, key, default=None):
+        return self.data[key] if key in self.data else default
+
+    def set(self, key, value):
+        self.is_dirty = True
+        self.data[key] = value
+
+    def delete(self, key):
+        if key in self.data:
+            self.is_dirty = True
+            del self.data[key]
+
+    def destroy(self):
+        self.data = {}
+        self.cache.delete(self.key_prefix + self.sid)
+        self.cookies.delete(self.sid_key)
+        self.is_dirty = False
+
+    def flush(self):
+        if self.is_dirty:
+            self.cache.set(self.key_prefix + self.sid, self.data)
+            self.is_dirty = False
+
+
+class Cache:
+    "should not be use in production"
+
+    def get(self, key):
+        return self.__dict__.get(key)
+
+    def set(self, key, value):
+        self.__dict__[key] = value
+
+    def delete(self, key):
+        del self.__dict__[key]
+
+
 class EventEmitter:
 
     def trigger(self, event, **kargs):
         pass
+
+
+class Response:
+
+    def redirect(self, url, permanent=False):
+        code = 301 if permanent else 302
+        return code, ('Location', url)
 
 
 class HttpError(Exception):

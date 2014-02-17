@@ -3,7 +3,7 @@
 a micro web framework built for fun
 
 * argument annotation(so python3 is needed)
-* jsonschema
+* jsonschema intergration
 
 ```py
 from klar import App
@@ -95,18 +95,18 @@ def get_db_connection():
 a more scalable way
 
 ```python
-from mysession import MySession
-app.provide('session', (MySession, 'localhost:2343'))
+import redis
+app.provide('kv', (redis.Redis, {'host': 'localhost'}))
 ```
 
-## rest TBD
+## rest(TBD)
 
 ```python
 from resource import product, catalog
 
 app = App()
 
-app.resource(product, catalog)
+app.resource(product, catalog, prefix="/v1")
 
 if __name__ == '__main__':
 	app.run()
@@ -117,32 +117,26 @@ in product
 ```python
 from .schemas import product
 
-def filters(input):
-	return {} if input not instanceof list
-	input = (x.split(':') for x in input if 2 == len(x.split(':')))
-	return dict(input)
-
 def create(body: product, db):
 	return db.products.insert(body)
 
-def show(id: string):
+def show(id: str):
 	item = db.products.find_one_by_id(id)
 	return item if item else 404
 
-def list(shift: int, limit: int, filter: filters, db):
-	criteria = map(filters, 
-	products = db.products.find(filter).skip(shift).limit(shift)
+def list(shift: int, limit: int, db):
+	products = db.products.find().skip(shift).limit(shift)
 ```
 
-## event TBD
+## event(TBD)
 
 ```python
 @on(404)
-def not_found(request): ->
+def not_found(request):
 	return 'not found'
 ```
 
-## post processing
+## post processing(TBD)
 
 ```python
 def jsonp(body, headers, request):
@@ -188,3 +182,54 @@ it's basically equivalent to this:
 @app.get('/') -> tmpl_home :
 	return tmpl_home({"key": "value"})
 ```
+
+## session
+
+session depends on `cache`, but klar does't has it builtin
+
+to use redis as session backend:
+
+```python
+import redis
+
+@app.provide('cache')
+def cache():
+	return redis.Redis(host='localhost', port=6379, db=0)
+```
+
+or
+
+```python
+app.privide('cache', (redis.Redis, {'host': 'localhost'}))
+```
+
+### use session
+
+```python
+@app.post('/login')
+def login(body, session):
+	# check body.username and body.password
+	if founduser:
+		session.set('userid', userid)
+
+@app.post('/login')
+def logout(session):
+	session.destroy()
+
+@app.get('/admin')
+def admin(session):
+	if session.get('userid'):
+		pass
+```
+
+## cookies
+
+```python
+cookies.get(key, default)
+cookies.set(key, value)
+cookies.delete(key)
+
+cookies.set(key, value, httponly=True)
+cookies.set_for_30_days(key, value)
+```
+

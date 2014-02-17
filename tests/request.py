@@ -2,7 +2,8 @@ from urllib import parse
 from io import BytesIO
 import json
 
-def request(app, path, content_type, query={}, body='', method="GET", cookies=[]):
+def request(app, path, content_type, query={}, body='', method="GET",
+            cookies={}):
     ret = {}
 
     def start_response(status, headers):
@@ -34,7 +35,8 @@ def json_request(**kwargs):
     defaults['body'] = json.dumps(defaults['body'])
     return request(**defaults)
 
-def post(**kwargs):
+def post(app, path, body={}, **kwargs):
+    kwargs.update({"app": app, "path": path, "body": body})
     defaults = {
         "method": "POST",
         "content_type": "application/x-www-form-urlencoded"

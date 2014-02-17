@@ -1,5 +1,5 @@
 from klar import App
-from request import get, json_request
+from request import get, json_request, post
 import json
 import datetime
 
@@ -117,14 +117,60 @@ class TestApp:
         assert res["status"] == "200 OK"
         assert res["headers"] == expected
 
-        expires = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).strftime("%a, %d-%b-%Y %H:%M:%S GMT")
+        expires = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).strftime("%a, %d %b %Y %H:%M:%S GMT")
         expected = [('Content-Type', 'text/html; charset=utf-8'),
                     ('Set-Cookie', 'foo=bar; expires=%s; httponly' % expires)]
         assert get(app, '/test-expires', cookies={"id": "foo"})['headers'] == expected
 
-        expires = datetime.datetime.utcfromtimestamp(0).strftime("%a, %d-%b-%Y %H:%M:%S GMT")
+        expires = datetime.datetime.utcfromtimestamp(0).strftime("%a, %d %b %Y %H:%M:%S GMT")
         expected = [('Content-Type', 'text/html; charset=utf-8'),
                     ('Set-Cookie', 'id=''; expires=%s' % expires)]
         res = get(app, '/test-delete', cookies={"id": "foo"})
         assert res["status"] == "200 OK"
         assert res["headers"] == expected
+
+    def test_session(self):
+
+        app = App()
+
+        @app.get('/test')
+        def test(session):
+            if session.get('userid'):
+                return 'userid: %s' % session.get('userid')
+            return 'not logged in'
+
+        @app.post('/login')
+        def login(body, session):
+            if body['username'] == 'admin' and body['passwd'] == 'secret':
+                session.set('userid', 123)
+                return 'logged in'
+            return 'failed'
+
+        @app.post('/logout')
+        def logout(session):
+            if session.get('userid'):
+                session.destroy()
+                return 'logged out'
+
+        res = post(app, '/login', {'username':'admin', 'passwd': 'secret'})
+        assert res['status'] == '200 OK'
+        assert res['body'] == 'logged in'
+        assert res['headers'][1][0] == 'Set-Cookie'
+        assert res['headers'][1][1].startswith('ksid=')
+        sid = res['headers'][1][1][5:]
+
+        res = get(app, '/test')
+        assert res['status'] == '200 OK'
+        assert res['body'] == 'not logged in'
+
+        res = get(app, '/test', cookies={"ksid": sid})
+        assert res['status'] == '200 OK'
+        assert res['body'] == 'userid: 123'
+
+        res = post(app, '/logout', cookies={"ksid": sid})
+        assert res['status'] == '200 OK'
+        assert res['body'] == 'logged out'
+
+        res = get(app, '/test', cookies={"ksid": sid})
+        assert res['status'] == '200 OK'
+        assert res['body'] == 'not logged in'

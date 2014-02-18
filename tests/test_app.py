@@ -174,3 +174,14 @@ class TestApp:
         res = get(app, '/test', cookies={"ksid": sid})
         assert res['status'] == '200 OK'
         assert res['body'] == 'not logged in'
+
+    def test_response(self):
+
+        app = App()
+
+        @app.get('/')
+        def test():
+            return 404
+
+        res = get(app, '/')
+        assert res['status'] == '404 Not Found'

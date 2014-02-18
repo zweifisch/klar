@@ -38,9 +38,13 @@ locals().update(root)
 
 class TemplateImporter(BaseImporter):
     code_template = """
-from cgi import escape
-def tmpl_%(fn)s(kvs):
-    return \"\"\"%(template)s\"\"\" %% {k: escape(v) for k, v in kvs.items()}
+from html import escape
+def tmpl_%(fn)s(kvs=None):
+    template = \"\"\"%(template)s\"\"\"
+    if type(kvs) is dict:
+        return template %% {k: escape(v) for k, v in kvs.items()}
+    else:
+        return template
 """
 
     def __init__(self, ext='.html'):

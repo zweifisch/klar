@@ -7,6 +7,8 @@ import traceback
 from functools import partial
 from urllib import parse
 from http.cookies import SimpleCookie
+from http.client import responses
+from cgi import FieldStorage, parse_header
 
 from jsonschema import validate
 from jsonschema.exceptions import ValidationError, SchemaError
@@ -27,6 +29,10 @@ class App:
         def body(request):
             return request.body
 
+        @self.provide('uploads')
+        def uploads(request):
+            return request.uploads
+
     def __getattr__(self, name):
         if name in ['get', 'post', 'delete', 'put', 'patch', 'head']:
             return partial(self.provider.router.add_rule, name)
@@ -40,6 +46,8 @@ class App:
         except HttpError as e:
             code, body = e.args
             headers = []
+        except Exception as e:
+            return 500, [], traceback.format_exc().replace("\n", "\n<br>")
         processed = self.process_hooks()
         if processed:
             code, headers, body = processed
@@ -53,6 +61,7 @@ class App:
 
         del self.provider.request
         del self.provider.body
+        del self.provider.uploads
         del self.provider.cookies
         del self.provider.session
         start_response(status, headers)
@@ -65,6 +74,8 @@ class App:
 
     def format_response(self, status, headers, body):
         default_headers = {'Content-Type': 'text/html; charset=utf-8'}
+        if body is None:
+            body = ''
         if type(body) not in [str, bytes]:
             body = json.dumps(body)
             headers = {'Content-Type': 'application/json; charset=utf-8'}
@@ -86,17 +97,14 @@ class App:
                 return 400, [], e.message
             except SchemaError as e:
                 return 500, [], e.message
-            try:
-                response = handler(**prepared_params)
-            except Exception as e:
-                return 500, [], traceback.format_exc()
+            response = handler(**prepared_params)
             return_anno = handler.__annotations__.get('return')
             if callable(return_anno):
                 response = return_anno(response)
             elif type(return_anno) is tuple:
                 for post_processer in return_anno:
                     response = post_processer(*response)
-            if tuple == type(response):
+            if type(response) == tuple:
                 for item in response:
                     if type(item) is tuple:
                         key, value = item
@@ -105,6 +113,8 @@ class App:
                         status = item
                     else:
                         body = item
+            elif type(response) == int:
+                status = response
             else:
                 body = response
         return status, headers, body
@@ -219,7 +229,7 @@ class Request:
 
     @property
     def content_type(self):
-        return self.environ['CONTENT_TYPE']
+        return parse_header(self.environ['CONTENT_TYPE'])
 
     @property
     def query(self):
@@ -227,15 +237,36 @@ class Request:
 
     @property
     def body(self):
+        if not hasattr(self, '_body'):
+            self.parse_body()
+        return self._body
+
+    def parse_body(self):
+        content_type, _ = self.content_type
+        if content_type == 'application/json':
+            self._body = json.loads(self.get_raw_body())
+        elif content_type == 'application/x-www-form-urlencoded':
+            self._body = dict(parse.parse_qsl(self.get_raw_body()))
+        elif content_type == 'multipart/form-data':
+            fs = FieldStorage(self.environ['wsgi.input'], environ=self.environ)
+            self._body, self._uploads = {}, {}
+            for name in fs.keys():
+                if fs[name].filename is None:
+                    self._body[name] = fs[name].value
+                else:
+                    self._uploads[name] = fs[name]
+
+    def get_raw_body(self):
         content_length = int(self.environ.get('CONTENT_LENGTH', 0))
         if content_length == 0:
-            return {}
-        body = self.environ['wsgi.input'].read(content_length).decode()
-        if self.content_type.startswith('application/json'):
-            body = json.loads(body)
-        elif self.content_type.startswith('application/x-www-form-urlencoded'):
-            body = dict(parse.parse_qsl(body))
-        return body
+            return ''
+        return self.environ['wsgi.input'].read(content_length).decode()
+
+    @property
+    def uploads(self):
+        if not hasattr(self, '_uploads'):
+            self.parse_body()
+        return self._uploads
 
     @property
     def path(self):
@@ -412,40 +443,6 @@ def get_args(fn):
             if p.kind is p.POSITIONAL_OR_KEYWORD]
 
 def get_status(code):
-    return {
-        200: '200 OK',
-        201: '201 Created',
-        202: '202 Accepted',
-        203: '203 Non-Authoritative Information',
-        204: '204 No Content',
-        205: '205 Reset Content',
-        206: '206 Partial Content',
-        300: '300 Multiple Choices',
-        301: '301 Moved Permanently',
-        302: '302 Found',
-        304: '304 Not Modified',
-        305: '305 Use Proxy',
-        307: '307 Temporary Redirect',
-        400: '400 Bad Request',
-        401: '401 Unauthorized',
-        403: '403 Forbidden',
-        404: '404 Not Found',
-        405: '405 Method Not Allowed',
-        406: '406 Not Acceptable',
-        407: '407 Proxy Authentication Required',
-        408: '408 Request Timeout',
-        409: '409 Conflict',
-        410: '410 Gone',
-        411: '411 Length Required',
-        412: '412 Precondition Failed',
-        413: '413 Request Entity Too Large',
-        414: '414 Request-URI Too Long',
-        415: '415 Unsupported Media Type',
-        416: '416 Requested Range Not Satisfiable',
-        417: '417 Expectation Failed',
-        500: '500 Internal Server Error',
-        501: '501 Not Implemented',
-        502: '502 Bad Gateway',
-        503: '503 Service Unavailable',
-        504: '504 Gateway Timeout',
-        505: '505 HTTP Version Not Supported'}.get(code)
+    if code not in responses:
+        raise HttpError(500, '%s is not a valide status code' % code)
+    return "%s %s" % (code, responses[code])

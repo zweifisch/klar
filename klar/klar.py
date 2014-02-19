@@ -397,11 +397,7 @@ class EventEmitter:
 
 
 class Response:
-
-    def redirect(self, url, permanent=False):
-        code = 301 if permanent else 302
-        return code, ('Location', url)
-
+    pass
 
 class HttpError(Exception):
     pass
@@ -446,3 +442,7 @@ def get_status(code):
     if code not in responses:
         raise HttpError(500, '%s is not a valide status code' % code)
     return "%s %s" % (code, responses[code])
+
+def redirect(url, permanent=False):
+    code = 301 if permanent else 302
+    return code, ('Location', url)

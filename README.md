@@ -13,9 +13,12 @@ app = App()
 @app.get('/hello/<name>')
 def hello(name: str, times: int = 1):
 	return "hello " * times + name
+```
 
-if __name__ == '__main__':
-	app.run()
+run it using [wsgi-supervisor](https://github.com/zweifisch/wsgi-supervisor)
+
+```sh
+wsgi-supervisor app.py
 ```
 
 ```sh

@@ -18,7 +18,7 @@ def hello(name: str, times: int = 1):
 run it using [wsgi-supervisor](https://github.com/zweifisch/wsgi-supervisor)
 
 ```sh
-wsgi-supervisor app.py
+wsgi-supervisor app:app
 ```
 
 ```sh
@@ -234,5 +234,17 @@ cookies.delete(key)
 
 cookies.set(key, value, httponly=True)
 cookies.set_for_30_days(key, value)
+```
+
+## serving static files
+
+should only be used in development enviroment
+
+```
+app.static('/public/')
+```
+
+```
+app.static('/public/', 'path/to/public/dir')
 ```
 

@@ -1,4 +1,4 @@
-from klar import Response, get_status
+from klar import redirect, get_status
 
 class TestResponse:
 
@@ -6,5 +6,4 @@ class TestResponse:
         assert '200 OK' == get_status(200)
 
     def test_redirect(self):
-        response = Response()
-        assert (301, ('Location', '/')) == response.redirect('/', permanent=True)
+        assert (301, ('Location', '/')) == redirect('/', permanent=True)

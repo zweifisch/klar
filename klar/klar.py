@@ -1,9 +1,11 @@
-import types
-import inspect
+import os
 import re
 import json
+import types
 import random
+import inspect
 import traceback
+import mimetypes
 from functools import partial
 from urllib import parse
 from http.cookies import SimpleCookie
@@ -160,6 +162,15 @@ class App:
         print('listen on %s' % port)
         make_server('', port, self).serve_forever()
 
+    def resource(self):
+        pass
+
+    def static(self, url_root, fs_root=None):
+        if fs_root is None:
+            fs_root = url_root[1:]
+        self.provider.router.add_rule('GET', re.compile(
+            "^" + url_root + "(?P<url>.+)$"), static_handler(fs_root))
+
 
 class Provider:
 
@@ -193,30 +204,33 @@ class Router:
 
     def add_rule(self, method, pattern, handler=None):
         method = method.upper()
+        if type(pattern) is str:
+            pattern = self.parse_pattern(pattern)
         if handler is None:
             def decorate(handler):
-                self.rules.append((method, self.parse_url(pattern), handler))
+                self.rules.append((method, pattern, handler))
                 return handler
             return decorate
-        self.rules.append((method, self.parse_url(pattern), handler))
+        self.rules.append((method, pattern, handler))
 
-    def parse_url(self, pattern):
-        keys = re.findall(r'<([^>]+)>', pattern)
-        pattern = re.compile('^%s$' % re.sub(r'<[^>]+>', '([^/]+)', pattern))
-        return keys, pattern
+    def parse_pattern(self, pattern):
+        pattern = re.compile('^%s$' % re.sub(r'<([^>]+)>',
+                                                r'(?P<\1>[^/]+)', pattern))
+        return pattern
 
     def dispatch(self, method, path):
-        for _method, (keys, pattern), handler in self.rules:
+        for _method, pattern, handler in self.rules:
             if _method != method:
                 continue
             result = pattern.match(path)
             if result:
-                return handler, dict(zip(keys, result.groups()))
+                return handler, result.groupdict()
         return None, None
 
     def __repr__(self):
-        return "\n".join(["%s %s -> %s" % (method, r.pattern, handler.__qualname__)
-                          for (method, (keys, r), handler) in self.rules])
+        return "\n".join(["%s %s -> %s" %
+                          (method, pattern.pattern, handler.__qualname__)
+                          for (method, pattern, handler) in self.rules])
 
 
 class Request:
@@ -446,3 +460,16 @@ def get_status(code):
 def redirect(url, permanent=False):
     code = 301 if permanent else 302
     return code, ('Location', url)
+
+def static_handler(fs_root):
+    if not os.path.isdir(fs_root):
+        raise HttpError(500, "static root %s should be a dir" % fs_root)
+
+    def handler(url):
+        fs_path = os.path.join(fs_root, url)
+        if not os.path.isfile(fs_path):
+            return 404, "%s not exists" % fs_path
+        mimetype, _ = mimetypes.guess_type(fs_path)
+        fp = open(fs_path)
+        return fp.read(), ('Content-Type', mimetype or 'application/octet-stream')
+    return handler

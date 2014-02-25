@@ -102,14 +102,14 @@ import redis
 app.provide('kv', (redis.Redis, {'host': 'localhost'}))
 ```
 
-## rest(TBD)
+## rest
 
 ```python
 from resource import product, catalog
 
 app = App()
 
-app.resource(product, catalog, prefix="/v1")
+app.resources(product, catalog, prefix="/v1")
 
 if __name__ == '__main__':
 	app.run()
@@ -118,17 +118,44 @@ if __name__ == '__main__':
 in product
 
 ```python
-from .schemas import product
+from schema import product
 
+# curl -X POST $host/v1/product -d @body
 def create(body: product, db):
 	return db.products.insert(body)
 
-def show(id: str):
-	item = db.products.find_one_by_id(id)
+# curl $host/v1/product/$id
+def show(product_id: str):
+	item = db.products.find_one({_id: product_id})
 	return item if item else 404
 
-def list(shift: int, limit: int, db):
-	products = db.products.find().skip(shift).limit(shift)
+# curl $host/v1/product?shift=10&limit=10
+def query(shift: int, limit: int, db):
+	return db.products.find().skip(shift).limit(shift)
+
+# curl -X PATCH $host/v1/product/$id -d @body
+def modify(body: product, product_id: str):
+	return db.products.update({_id: product_id}, {'$set': body})
+
+# curl -X PUT $host/v1/product/$id -d @body
+def replace(body: product, product_id: str):
+	return db.products.update({_id: product_id}, body)
+
+# curl -X DELETE $host/v1/product/$id
+def destroy(product_id: str):
+	return db.products.delete({_id: product_id})
+```
+
+### custom method
+
+```python
+from klar import method
+
+@method('patch')  # default is GET
+def like(product_id):
+	return db.products.update({_id: product_id}, {'$inc': {'likes': 1}})
+
+# curl -X PATCH $host/v1/product/$id/like
 ```
 
 ## event(TBD)

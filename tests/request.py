@@ -35,10 +35,9 @@ def json_request(**kwargs):
     defaults['body'] = json.dumps(defaults['body'])
     return request(**defaults)
 
-def post(app, path, body={}, **kwargs):
+def form_request(app, path, body={}, **kwargs):
     kwargs.update({"app": app, "path": path, "body": body})
     defaults = {
-        "method": "POST",
         "content_type": "application/x-www-form-urlencoded"
     }
     defaults.update(kwargs)
@@ -53,3 +52,9 @@ def get(app, path, query={}, **kwargs):
     }
     defaults.update(kwargs)
     return request(**defaults)
+
+def post(app, path, body={}, **kwargs):
+    return form_request(app, path, body, method='POST', **kwargs)
+
+def patch(app, path, body={}, **kwargs):
+    return form_request(app, path, body, method='PATCH', **kwargs)

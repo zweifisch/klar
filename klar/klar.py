@@ -17,6 +17,19 @@ from jsonschema.exceptions import ValidationError, SchemaError
 
 class App:
 
+    rules = [
+        ('GET',    '%(path)s',               'query'),
+        ('POST',   '%(path)s',               'create'),
+        ('GET',    '%(path)s/<%(id)s>',      'show'),
+        ('PUT',    '%(path)s/<%(id)s>',      'replace'),
+        ('PATCH',  '%(path)s/<%(id)s>',      'modify'),
+        ('DELETE', '%(path)s/<%(id)s>',      'destroy'),
+        ('GET',    '%(path)s/new',           'new'),
+        ('GET',    '%(path)s/<%(id)s>/edit', 'edit'),
+    ]
+
+    methods = [method for _, _, method in rules]
+
     def __init__(self):
         self.provider = Provider(
             router=Router,
@@ -162,8 +175,36 @@ class App:
         print('listen on %s' % port)
         make_server('', port, self).serve_forever()
 
-    def resource(self):
-        pass
+    def resource(self, url_path=None, module=None):
+        if url_path is None:
+            url_path = '/' + module.__name__.replace('.', '/')
+        if module is None:
+            return partial(self.register_resource, url_path)
+        else:
+            self.register_resource(url_path, module)
+
+    def register_resource(self, url_path, module):
+        url_id = '%s_id' % url_path.split('/').pop()
+        vals = {'path': url_path, 'id': url_id}
+        rules = [(method, pattern % vals, getattr(module, handler))
+                 for method, pattern, handler in self.rules
+                 if hasattr(module, handler)]
+
+        if isinstance(type(module), types.ModuleType):
+            fns = get_module_fns(module)
+        else:
+            fns = get_methods(module)
+
+        custom_rules = [(getattr(fn, '__httpmethod__', 'GET'),
+                        '%s/<%s>/%s' % (url_path, url_id, fn.__name__),
+                        fn) for fn in fns if fn.__name__ not in self.methods]
+        self.provider.router.add_rules(rules)
+        self.provider.router.add_rules(custom_rules)
+
+    def resources(self, *resources, prefix=''):
+        for resource in resources:
+            url_path = prefix + '/' + resource.__name__.split('.').pop()
+            self.register_resource(url_path, resource)
 
     def static(self, url_root, fs_root=None):
         if fs_root is None:
@@ -213,9 +254,13 @@ class Router:
             return decorate
         self.rules.append((method, pattern, handler))
 
+    def add_rules(self, rules):
+        for rule in rules:
+            self.add_rule(*rule)
+
     def parse_pattern(self, pattern):
-        pattern = re.compile('^%s$' % re.sub(r'<([^>]+)>',
-                                                r'(?P<\1>[^/]+)', pattern))
+        pattern = re.compile('^%s$' %
+                             re.sub(r'<([^>]+)>', r'(?P<\1>[^/]+)', pattern))
         return pattern
 
     def dispatch(self, method, path):
@@ -473,3 +518,18 @@ def static_handler(fs_root):
         fp = open(fs_path)
         return fp.read(), ('Content-Type', mimetype or 'application/octet-stream')
     return handler
+
+def get_module_fns(module):
+    attrs = [getattr(module, a) for a in dir(module) if not a.startswith('_')]
+    return [attr for attr in attrs if isinstance(attr, types.FunctionType)
+            and attr.__module__ == module.__name__]
+
+def get_methods(cls):
+    attrs = [getattr(cls, a) for a in dir(cls) if not a.startswith('_')]
+    return [attr for attr in attrs if isinstance(attr, types.FunctionType)]
+
+def method(httpmethod):
+    def add_method(fn):
+        fn.__httpmethod__ = httpmethod
+        return fn
+    return add_method

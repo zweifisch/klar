@@ -1,5 +1,5 @@
-from klar import App
-from request import get, json_request, post
+from klar import App, method
+from request import get, json_request, post, patch
 import json
 import datetime
 
@@ -152,7 +152,7 @@ class TestApp:
                 session.destroy()
                 return 'logged out'
 
-        res = post(app, '/login', {'username':'admin', 'passwd': 'secret'})
+        res = post(app, '/login', {'username': 'admin', 'passwd': 'secret'})
         assert res['status'] == '200 OK'
         assert res['body'] == 'logged in'
         assert res['headers'][1][0] == 'Set-Cookie'
@@ -185,3 +185,64 @@ class TestApp:
 
         res = get(app, '/')
         assert res['status'] == '404 Not Found'
+
+    def test_resource_cls(self):
+
+        app = App()
+
+        @app.resource('/v1/post')
+        class PostResource:
+            def show(post_id):
+                return 'post: %s' % post_id
+
+            @method('patch')
+            def like(post_id):
+                return 'liked: %s' % post_id
+
+        res = get(app, '/v1/post/31415')
+        assert res['status'] == '200 OK'
+        assert res['body'] == 'post: 31415'
+
+        res = get(app, '/v1/post/3141/like')
+        assert res['status'].startswith('404')
+
+        res = patch(app, '/v1/post/3141/like')
+        assert res['status'].startswith('200')
+
+    def test_resource_module(self):
+
+        app = App()
+
+        from resources import post
+        app.resource(module=post)
+
+        res = get(app, '/resources/post/314')
+        assert res['status'] == '200 OK'
+        assert res['body'] == 'post: 314'
+
+        app = App()
+
+        from resources import post
+        app.resource('/v1/post', post)
+
+        res = get(app, '/v1/post/3141')
+        assert res['status'] == '200 OK'
+        assert res['body'] == 'post: 3141'
+
+        res = get(app, '/v1/post/31415/downvote')
+        assert res['status'].startswith('404')
+
+        res = patch(app, '/v1/post/31415/upvote')
+        assert res['status'].startswith('200')
+        assert res['body'] == 'upvote: 31415'
+
+    def test_resources(self):
+
+        app = App()
+
+        from resources import post
+        app.resources(post, prefix='/v2')
+
+        res = get(app, '/v2/post/31')
+        assert res['status'] == '200 OK'
+        assert res['body'] == 'post: 31'

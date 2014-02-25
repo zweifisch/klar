@@ -158,12 +158,30 @@ def like(product_id):
 # curl -X PATCH $host/v1/product/$id/like
 ```
 
-## event(TBD)
+## events
+
+listening for an event
 
 ```python
 @on(404)
 def not_found(request):
-	return 'not found'
+	print('%s not found' % request.path)
+```
+
+### custom events
+
+```python
+@on('user-login')
+def onlogin(userid, db):
+	print('user: %s logged in' % userid)
+	db.users.update({_id:userid}, {'$inc': {'logincount': 1}})
+```
+
+emit an event
+
+```python
+def login(emitter):
+	emitter.emit('user-login', userid=id)
 ```
 
 ## post processing(TBD)

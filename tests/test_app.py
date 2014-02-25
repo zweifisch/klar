@@ -246,3 +246,23 @@ class TestApp:
         res = get(app, '/v2/post/31')
         assert res['status'] == '200 OK'
         assert res['body'] == 'post: 31'
+
+    def test_event(self):
+
+        app = App()
+
+        @app.get('/')
+        def home(emitter):
+            emitter.emit('foo', bar='visited')
+
+        @app.on('foo')
+        def handle_foo(bar, cookies):
+            cookies.set('event', bar)
+
+        @app.on(200)
+        def handle_200(cookies):
+            cookies.set('code', 200)
+
+        res = get(app, '/')
+        assert res['cookies']['event'].value == 'visited'
+        assert res['cookies']['code'].value == '200'

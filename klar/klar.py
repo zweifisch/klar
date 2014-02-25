@@ -38,7 +38,12 @@ class App:
             cache=Cache,
             session=Session,
             response=Response,
+            emitter=EventEmitter,
         )
+
+        @self.provide('provider')
+        def provider():
+            return self.provider
 
         @self.provide('body')
         def body(request):
@@ -66,6 +71,7 @@ class App:
         processed = self.process_hooks()
         if processed:
             code, headers, body = processed
+        self.provider.emitter.emit(code)
         status, headers, body = self.format_response(code, headers, body)
 
         if code != 500:
@@ -167,8 +173,11 @@ class App:
         else:
             self.provider.register(name, component)
 
-    def on(self, event):
-        pass
+    def on(self, event, handler=None):
+        if handler:
+            return self.provider.emitter.register(event, handler)
+        else:
+            return partial(self.provider.emitter.register, event)
 
     def run(self, port=3000):
         from wsgiref.simple_server import make_server
@@ -284,7 +293,7 @@ class Request:
         self.environ = environ
 
     def env(self, key, default=None):
-        return self.environ.get(key) or default
+        return self.environ.get(key, default)
 
     @property
     def content_type(self):
@@ -451,9 +460,24 @@ class Cache:
 
 class EventEmitter:
 
-    def trigger(self, event, **kargs):
-        pass
+    def __init__(self, provider):
+        self.listeners = {}
+        self.provider = provider
 
+    def emit(self, event, **kargs):
+        if event in self.listeners:
+            for listener in self.listeners[event]:
+                invoke(listener, kargs, self.provider)
+
+    def register(self, event, handler):
+        if event in self.listeners:
+            self.listeners[event].append(handler)
+        else:
+            self.listeners[event] = [handler]
+
+
+class Config:
+    pass
 
 class Response:
     pass

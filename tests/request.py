@@ -1,6 +1,7 @@
 from urllib import parse
 from io import BytesIO
 import json
+from http.cookies import SimpleCookie
 
 def request(app, path, content_type, query={}, body='', method="GET",
             cookies={}):
@@ -9,7 +10,13 @@ def request(app, path, content_type, query={}, body='', method="GET",
     def start_response(status, headers):
         ret["status"] = status
         ret["headers"] = headers
-
+        ret["cookies"] = {}
+        cookies = SimpleCookie()
+        for k, v in headers:
+            if k == 'Set-Cookie':
+                cookies.load(v)
+        for key in cookies.keys():
+            ret["cookies"][key] = cookies[key]
     env = {
         "REQUEST_METHOD": method,
         "PATH_INFO": path,

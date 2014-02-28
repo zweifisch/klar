@@ -217,9 +217,10 @@ to use more than one processors
 ```
 
 ```python
-from template.home import tmpl_home
+# the tmpl_ prefix is used to avoid conflicts
+from templates.home import tmpl_home
 
-@app.get('/') -> tmpl_home :
+@app.get('/') -> tmpl_home:
 	return {"key": "value"}
 ```
 
@@ -227,8 +228,23 @@ from template.home import tmpl_home
 it's basically equivalent to this:
 
 ```python
-@app.get('/') -> tmpl_home :
+@app.get('/'):
 	return tmpl_home({"key": "value"})
+```
+
+### mustache
+
+depends on pystache, `pip install pystache`
+
+use `.mustache` as extension
+
+```
+|--templates
+   |--home.mustache
+```
+
+```python
+from templates.home import tmpl_home
 ```
 
 ## session

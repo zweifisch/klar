@@ -58,18 +58,60 @@ def tmpl_%(fn)s(kvs=None):
         return self.code_template % data
 
 
+class JadeImporter(BaseImporter):
+    def __init__(self, ext='.jade'):
+        self.ext = ext
+
+    def get_source(self, filename):
+        pass
+
+
+class JinjaImporter(BaseImporter):
+    def __init__(self, ext='.jinja'):
+        self.ext = ext
+
+    def get_source(self, filename):
+        pass
+
+
+class MustacheImporter(BaseImporter):
+    code_template = """
+from pystache import render
+def tmpl_%(fn)s(kvs=None):
+    template = \"\"\"%(template)s\"\"\"
+    if type(kvs) is dict:
+        return render(template, kvs)
+    else:
+        return template
+"""
+
+    def __init__(self, ext=".mustache"):
+        self.ext = ext
+
+    def get_source(self, filename):
+        data = {
+            "fn": basename(filename),
+            "template": slurp(filename)
+        }
+        return self.code_template % data
+
+
 def slurp(filename):
     with open(filename) as fp:
         return fp.read()
 
+
 def basename(filename):
     return os.path.splitext(os.path.basename(filename))[0]
+
 
 def compile_template(src):
     return re.sub(r'<%\s*(\w+)\s*%>', '%(\\1)s', src)
 
+
 def install(importer):
     return sys.meta_path.append(importer)
+
 
 def uninstall(importer):
     sys.meta_path.remove(importer)

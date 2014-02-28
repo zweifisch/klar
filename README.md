@@ -217,19 +217,18 @@ to use more than one processors
 ```
 
 ```python
-# the tmpl_ prefix is used to avoid conflicts
-from templates.home import tmpl_home
+import templates.home
 
-@app.get('/') -> tmpl_home:
+@app.get('/') -> templates.home:
 	return {"key": "value"}
 ```
 
-`tmpl_home` is a function that accecpts a single argument
+`templates.home` accecpts an optional dict as argument
 it's basically equivalent to this:
 
 ```python
 @app.get('/'):
-	return tmpl_home({"key": "value"})
+	return templates.home({"key": "value"})
 ```
 
 ### mustache
@@ -244,7 +243,7 @@ use `.mustache` as extension
 ```
 
 ```python
-from templates.home import tmpl_home
+import templates.home
 ```
 
 ## session

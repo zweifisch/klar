@@ -2,9 +2,13 @@ import os
 import sys
 import imp
 import re
+import types
 
 
-class BaseImporter:
+class Finder:
+    def __init__(self, ext):
+        self.ext = ext
+
     def find_module(self, fullname, path):
         for dirname in sys.path:
             filename = os.path.join(dirname, *(fullname.split('.'))) + self.ext
@@ -12,21 +16,37 @@ class BaseImporter:
                 self.filename = filename
                 return self
 
+
+class BaseImporter(Finder):
     def load_module(self, fullname):
         if fullname in sys.modules:
             mod = sys.modules[fullname]
         else:
             sys.modules[fullname] = mod = imp.new_module(fullname)
-        mod.__file__ = self.filename
-        mod.__loader__ = self
-        exec(self.get_source(self.filename), mod.__dict__)
+            mod.__file__ = self.filename
+            mod.__loader__ = self
+            exec(self.get_source(self.filename), mod.__dict__)
+        return mod
+
+
+class TemplateModule(types.ModuleType):
+    def __call__(self, kvs=None):
+        return self.__call__(kvs)
+
+
+class TemplateImporter(Finder):
+    def load_module(self, fullname):
+        if fullname in sys.modules:
+            mod = sys.modules[fullname]
+        else:
+            sys.modules[fullname] = mod = TemplateModule(fullname)
+            mod.__file__ = self.filename
+            mod.__loader__ = self
+            exec(self.get_source(self.filename), mod.__dict__)
         return mod
 
 
 class JsonImporter(BaseImporter):
-    def __init__(self, ext='.json'):
-        self.ext = ext
-
     def get_source(self, filename):
         template = """
 import json
@@ -36,64 +56,42 @@ locals().update(root)
         return template % slurp(filename)
 
 
-class TemplateImporter(BaseImporter):
+class HtmlImporter(TemplateImporter):
     code_template = """
 from html import escape
-def tmpl_%(fn)s(kvs=None):
-    template = \"\"\"%(template)s\"\"\"
+def __call__(kvs=None):
+    template = \"\"\"%s\"\"\"
     if type(kvs) is dict:
         return template %% {k: escape(v) for k, v in kvs.items()}
     else:
-        return template
-"""
-
-    def __init__(self, ext='.html'):
-        self.ext = ext
+        return template"""
 
     def get_source(self, filename):
-        data = {
-            "fn": basename(filename),
-            "template": compile_template(slurp(filename))
-        }
-        return self.code_template % data
+        return self.code_template % compile_template(slurp(filename))
 
 
-class JadeImporter(BaseImporter):
-    def __init__(self, ext='.jade'):
-        self.ext = ext
-
+class JadeImporter(TemplateImporter):
     def get_source(self, filename):
         pass
 
 
-class JinjaImporter(BaseImporter):
-    def __init__(self, ext='.jinja'):
-        self.ext = ext
-
+class JinjaImporter(TemplateImporter):
     def get_source(self, filename):
         pass
 
 
-class MustacheImporter(BaseImporter):
+class MustacheImporter(TemplateImporter):
     code_template = """
 from pystache import render
-def tmpl_%(fn)s(kvs=None):
-    template = \"\"\"%(template)s\"\"\"
+def __call__(kvs=None):
+    template = \"\"\"%s\"\"\"
     if type(kvs) is dict:
         return render(template, kvs)
     else:
-        return template
-"""
-
-    def __init__(self, ext=".mustache"):
-        self.ext = ext
+        return template"""
 
     def get_source(self, filename):
-        data = {
-            "fn": basename(filename),
-            "template": slurp(filename)
-        }
-        return self.code_template % data
+        return self.code_template % slurp(filename)
 
 
 def slurp(filename):

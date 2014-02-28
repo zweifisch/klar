@@ -223,6 +223,13 @@ class App:
         self.provider.router.add_rule('GET', re.compile(
             "^" + url_root + "(?P<url>.+)$"), static_handler(fs_root))
 
+    def route(self, path, methods, handler=None):
+        if handler:
+            for method in methods:
+                self.provider.router.add_rule(method, path, handler)
+        else:
+            return partial(self.route, path, methods)
+
 
 class Provider:
 

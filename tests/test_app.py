@@ -3,6 +3,7 @@ from request import get, json_request, post, patch
 import json
 import datetime
 
+
 class TestApp:
 
     def test_hello(self):
@@ -12,7 +13,8 @@ class TestApp:
         def hello(name: str, times: int=1):
             return "hello " * times + name
 
-        assert get(app, '/hello/klar', {"times": 2})['body'] == "hello hello klar"
+        response = get(app, '/hello/klar', {"times": 2})
+        assert response['body'] == "hello hello klar"
 
     def test_routing(self):
         app = App()
@@ -22,12 +24,18 @@ class TestApp:
             return 'index'
 
         @app.get('/foo')
-        def index():
+        def foo():
             return 'foo'
+
+        @app.route('/bar', methods=['get', 'post', 'put'])
+        def bar(request):
+            return '%s: %s' % (request.method, request.path)
 
         assert get(app=app, path='/')['body'] == 'index'
         assert get(app=app, path='/foo')['body'] == 'foo'
-        assert get(app=app, path='/bar')['status'].startswith('404')
+        assert get(app=app, path='/baz')['status'].startswith('404')
+        assert get(app, '/bar')['body'] == 'GET: /bar'
+        assert post(app, '/bar')['body'] == 'POST: /bar'
 
     def test_params(self):
         app = App()
@@ -47,7 +55,7 @@ class TestApp:
 
         body = {"key": "value"}
         assert json_request(app=app, path='/create',
-                           body=body)['body'] == json.dumps(body)
+                            body=body)['body'] == json.dumps(body)
 
     def test_schema(self):
         app = App()
@@ -58,11 +66,11 @@ class TestApp:
 
         body = ["key", "value"]
         assert json_request(app=app, path='/create',
-                           body=body)['body'] == json.dumps(body)
+                            body=body)['body'] == json.dumps(body)
 
         body = {"key": "value"}
         assert json_request(app=app, path='/create',
-                           body=body)['status'].startswith('400')
+                            body=body)['status'].startswith('400')
 
     def test_type(self):
         app = App()
@@ -73,15 +81,16 @@ class TestApp:
 
         assert get(app=app, path='/test/200')['body'] == '200'
 
-        assert get(app=app, path='/test/200', query={"foo": 1})['body'] == '201'
+        response = get(app=app, path='/test/200', query={"foo": 1})
+        assert response['body'] == '201'
 
     def test_template_rendering(self):
         app = App()
 
-        from templates import tmpl_test
+        import templates.test
 
         @app.get('/test')
-        def test(key) -> tmpl_test:
+        def test(key) -> templates.test:
             return {"key": key}
 
         assert get(app, '/test', {"key": "foo"})['body'] == "key is foo\n"
@@ -95,17 +104,17 @@ class TestApp:
             return cookies.get('id')
 
         @app.get('/test-set')
-        def test(cookies):
+        def test2(cookies):
             cookies.set('foo', 'bar')
             return ''
 
         @app.get('/test-expires')
-        def test(cookies):
+        def test3(cookies):
             cookies.set_for_30_days('foo', 'bar', httponly=True)
             return ''
 
         @app.get('/test-delete')
-        def test(cookies):
+        def test4(cookies):
             cookies.delete('id')
             return ''
 
@@ -117,12 +126,15 @@ class TestApp:
         assert res["status"] == "200 OK"
         assert res["headers"] == expected
 
-        expires = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        fmt = "%a, %d %b %Y %H:%M:%S GMT"
+        expires = (datetime.datetime.utcnow() +
+                   datetime.timedelta(days=30)).strftime(fmt)
         expected = [('Content-Type', 'text/html; charset=utf-8'),
                     ('Set-Cookie', 'foo=bar; expires=%s; httponly' % expires)]
-        assert get(app, '/test-expires', cookies={"id": "foo"})['headers'] == expected
+        response = get(app, '/test-expires', cookies={"id": "foo"})
+        assert response['headers'] == expected
 
-        expires = datetime.datetime.utcfromtimestamp(0).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        expires = datetime.datetime.utcfromtimestamp(0).strftime(fmt)
         expected = [('Content-Type', 'text/html; charset=utf-8'),
                     ('Set-Cookie', 'id=''; expires=%s' % expires)]
         res = get(app, '/test-delete', cookies={"id": "foo"})

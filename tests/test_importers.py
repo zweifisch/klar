@@ -1,10 +1,12 @@
 import klar
 
+
 class TestImporters:
 
     def test_template_import(self):
-        from templates import tmpl_index
-        assert tmpl_index({'html': '<i>html</i>'}) == "<html>&lt;i&gt;html&lt;/i&gt;</html>\n"
+        import templates.index
+        expected = "<html>&lt;i&gt;html&lt;/i&gt;</html>\n"
+        assert templates.index({'html': '<i>html</i>'}) == expected
 
     def test_json_import(self):
         from schemas import product

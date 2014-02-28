@@ -9,11 +9,12 @@ import mimetypes
 from functools import partial
 from urllib import parse
 from http.cookies import SimpleCookie
-from http.client import responses
+import http.client
 from cgi import FieldStorage, parse_header
 
 from jsonschema import validate
 from jsonschema.exceptions import ValidationError, SchemaError
+
 
 class App:
 
@@ -141,7 +142,7 @@ class App:
         return status, headers, body
 
     def prepare_params(self, handler, params):
-        args, *_ = inspect.getargs(handler.__code__)
+        args = inspect.getargs(handler.__code__)[0]
         params = dict(get_arg_defaults(handler), **params)
         for name in args:
             if hasattr(self.provider, name):
@@ -160,8 +161,8 @@ class App:
                 elif callable(anno):
                     params[name] = anno(params[name])
                 else:
-                    raise HttpError(500, "unrecognized annotation type for %s" % name)
-
+                    raise HttpError(500, "unrecognized annotation type for %s"
+                                    % name)
         return {name: params[name] for name in args}
 
     def provide(self, name, component=None):
@@ -479,14 +480,17 @@ class EventEmitter:
 class Config:
     pass
 
+
 class Response:
     pass
+
 
 class HttpError(Exception):
     pass
 
 
 def invoke(fn, *param_dicts):
+    "call a function with a list of dicts providing params"
     prepared_params = {}
     args = get_args(fn)
     defaults = get_arg_defaults(fn)
@@ -505,30 +509,40 @@ def invoke(fn, *param_dicts):
                 raise Exception("%s is required" % name)
     return fn(**prepared_params)
 
+
 def instance(cls, *param_dicts):
+    "get instance of a given class"
     if isinstance(cls.__init__, types.FunctionType):
         return invoke(cls, *param_dicts)
     else:
         return cls()
 
+
 def get_arg_defaults(fn):
+    "get arguments with default values as a dict"
     sig = inspect.signature(fn)
     return {p.name: p.default for p in sig.parameters.values()
             if p.kind is p.POSITIONAL_OR_KEYWORD and p.default is not p.empty}
 
+
 def get_args(fn):
+    "get argument names of a function as a list of strings"
     sig = inspect.signature(fn)
     return [p.name for p in sig.parameters.values()
             if p.kind is p.POSITIONAL_OR_KEYWORD]
 
+
 def get_status(code):
-    if code not in responses:
+    "get status using http code"
+    if code not in http.client.responses:
         raise HttpError(500, '%s is not a valide status code' % code)
-    return "%s %s" % (code, responses[code])
+    return "%s %s" % (code, http.client.responses[code])
+
 
 def redirect(url, permanent=False):
     code = 301 if permanent else 302
     return code, ('Location', url)
+
 
 def static_handler(fs_root):
     if not os.path.isdir(fs_root):
@@ -540,19 +554,26 @@ def static_handler(fs_root):
             return 404, "%s not exists" % fs_path
         mimetype, _ = mimetypes.guess_type(fs_path)
         fp = open(fs_path)
-        return fp.read(), ('Content-Type', mimetype or 'application/octet-stream')
+        return fp.read(), ('Content-Type',
+                           mimetype or 'application/octet-stream')
     return handler
 
+
 def get_module_fns(module):
+    "get defined functions of module"
     attrs = [getattr(module, a) for a in dir(module) if not a.startswith('_')]
     return [attr for attr in attrs if isinstance(attr, types.FunctionType)
             and attr.__module__ == module.__name__]
 
+
 def get_methods(cls):
+    "get public methods of a class"
     attrs = [getattr(cls, a) for a in dir(cls) if not a.startswith('_')]
     return [attr for attr in attrs if isinstance(attr, types.FunctionType)]
 
+
 def method(httpmethod):
+    "decorator to overwrite default method(GET) for custom actions"
     def add_method(fn):
         fn.__httpmethod__ = httpmethod
         return fn

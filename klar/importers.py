@@ -48,12 +48,20 @@ class TemplateImporter(Finder):
 
 class JsonImporter(BaseImporter):
     def get_source(self, filename):
-        template = """
+        return """
 import json
 root = json.loads(\"\"\"%s\"\"\")
 locals().update(root)
-"""
-        return template % slurp(filename)
+""" % slurp(filename)
+
+
+class YamlImporter(BaseImporter):
+    def get_source(self, filename):
+        return """
+import yaml
+root = yaml.load(\"\"\"%s\"\"\")
+locals().update(root)
+""" % slurp(filename)
 
 
 class SimpleTemplateImporter(TemplateImporter):

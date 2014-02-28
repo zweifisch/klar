@@ -48,7 +48,7 @@ def create(body: product, db):
 	return {"ok": True}
 ```
 
-schemas can/should be imported from json or yaml(TBD) files
+schemas can/should be imported from json or yaml files
 
 ```
 |--app.py

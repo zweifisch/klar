@@ -118,7 +118,8 @@ class App:
             except ValidationError as e:
                 return 400, [], e.message
             except SchemaError as e:
-                return 500, [], e.message
+                print(traceback.format_exc())
+                return 500, [], "Error in schema: " + e.message
             response = handler(**prepared_params)
             return_anno = handler.__annotations__.get('return')
             if callable(return_anno):

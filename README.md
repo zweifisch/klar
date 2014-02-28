@@ -307,4 +307,3 @@ app.static('/public/')
 ```
 app.static('/public/', 'path/to/public/dir')
 ```
-

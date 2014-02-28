@@ -56,18 +56,21 @@ locals().update(root)
         return template % slurp(filename)
 
 
-class HtmlImporter(TemplateImporter):
+class SimpleTemplateImporter(TemplateImporter):
     code_template = """
 from html import escape
+from string import Template
+
+template = Template(\"\"\"%s\"\"\")
+
 def __call__(kvs=None):
-    template = \"\"\"%s\"\"\"
     if type(kvs) is dict:
-        return template %% {k: escape(v) for k, v in kvs.items()}
+        return template.substitute({k: escape(v) for k, v in kvs.items()})
     else:
-        return template"""
+        return template.template"""
 
     def get_source(self, filename):
-        return self.code_template % compile_template(slurp(filename))
+        return self.code_template % slurp(filename)
 
 
 class JadeImporter(TemplateImporter):
@@ -101,10 +104,6 @@ def slurp(filename):
 
 def basename(filename):
     return os.path.splitext(os.path.basename(filename))[0]
-
-
-def compile_template(src):
-    return re.sub(r'<%\s*(\w+)\s*%>', '%(\\1)s', src)
 
 
 def install(importer):

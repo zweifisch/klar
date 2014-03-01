@@ -260,7 +260,6 @@ class TestApp:
         assert res['body'] == 'post: 31'
 
     def test_event(self):
-
         app = App()
 
         @app.get('/')
@@ -278,3 +277,24 @@ class TestApp:
         res = get(app, '/')
         assert res['cookies']['event'].value == 'visited'
         assert res['cookies']['code'].value == '200'
+
+    def test_response_processing(self):
+        app = App()
+
+        def jsonp(body, request):
+            callback = request.query.get('callback')
+            if callback:
+                body = "%s(%s)" % (callback, json.dumps(body))
+                return body, ("Content-Type", "application/javascript")
+
+        @app.get('/')
+        def handler() -> jsonp:
+            return {'key': 'value'}
+
+        res = get(app, '/', dict(callback='cb'))
+        assert res['body'] == 'cb({"key": "value"})'
+        assert res['headers'] == [("Content-Type", "application/javascript")]
+
+        res = get(app, '/')
+        assert res['status'] == '200 OK'
+        assert res['body'] == '{"key": "value"}'

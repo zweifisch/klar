@@ -63,17 +63,16 @@ class App:
     def __call__(self, environ, start_response):
         self.provider.environ = environ
         try:
-            code, headers, body = self.process_request()
+            body, code, headers = self.process_request()
         except HttpError as e:
             code, body = e.args
             headers = []
         except Exception as e:
-            return 500, [], traceback.format_exc().replace("\n", "\n<br>")
-        processed = self.process_hooks()
-        if processed:
-            code, headers, body = processed
+            body, code, headers = '', 500, []
+            print(traceback.format_exc())
+
         self.provider.emitter.emit(code)
-        status, headers, body = self.format_response(code, headers, body)
+        body, status, headers = self.format_response(body, code, headers)
 
         if code != 500:
             self.provider.session.flush()
@@ -91,10 +90,7 @@ class App:
             body = body.encode('utf-8')
         return [body]
 
-    def process_hooks(self):
-        pass
-
-    def format_response(self, status, headers, body):
+    def format_response(self, body, code, headers):
         default_headers = {'Content-Type': 'text/html; charset=utf-8'}
         if body is None:
             body = ''
@@ -102,45 +98,61 @@ class App:
             body = json.dumps(body)
             headers = {'Content-Type': 'application/json; charset=utf-8'}
         default_headers.update(headers)
-        return get_status(status), list(default_headers.items()), body
+        return body, get_status(code), list(default_headers.items())
 
     def process_request(self):
         handler, params = self.provider.router.dispatch(
             self.provider.request.method, self.provider.request.path)
-        headers = {}
-        status = 404
-        body = ''
-        if handler:
-            status = 200
-            params = dict(self.provider.request.query, **params)
-            try:
-                prepared_params = self.prepare_params(handler, params)
-            except ValidationError as e:
-                return 400, [], e.message
-            except SchemaError as e:
-                print(traceback.format_exc())
-                return 500, [], "Error in schema: " + e.message
-            response = handler(**prepared_params)
-            return_anno = handler.__annotations__.get('return')
-            if callable(return_anno):
-                response = return_anno(response)
-            elif type(return_anno) is tuple:
-                for post_processer in return_anno:
-                    response = post_processer(*response)
-            if type(response) == tuple:
-                for item in response:
-                    if type(item) is tuple:
-                        key, value = item
-                        headers[key] = value
-                    elif type(item) is int:
-                        status = item
-                    else:
-                        body = item
-            elif type(response) == int:
-                status = response
+        if not handler:
+            return '', 404, {}
+
+        params = dict(self.provider.request.query, **params)
+        try:
+            prepared_params = self.prepare_params(handler, params)
+        except ValidationError as e:
+            return e.message, 400, {}
+        except SchemaError as e:
+            print(traceback.format_exc())
+            return "Error in schema: " + e.message, 500, {}
+
+        response = self.normalize_response(handler(**prepared_params))
+
+        processers = handler.__annotations__.get('return')
+        if type(processers) is tuple:
+            response = self.process_response(response, *processers)
+        elif callable(processers):
+            response = self.process_response(response, processers)
+        return response['body'], response['code'], response['headers']
+
+    def normalize_response(self, response):
+        body, code, headers = None, 200, {}
+        if type(response) == tuple:
+            for item in response:
+                if type(item) is tuple:
+                    key, value = item
+                    headers[key] = value
+                elif type(item) is int:
+                    code = item
+                else:
+                    body = item
+        elif type(response) == int:
+            code = response
+        else:
+            body = response
+        return dict(body=body, code=code, headers=headers)
+
+    def process_response(self, response, *processers):
+        for processer in processers:
+            args = get_args(processer)
+            if len(args) == 1:
+                response['body'] = processer(response['body'])
             else:
-                body = response
-        return status, headers, body
+                resp = invoke(processer, response, self.provider)
+                if resp:
+                    resp = self.normalize_response(resp)
+                    response['headers'].update(resp.pop('headers'))
+                    response.update(resp)
+        return response
 
     def prepare_params(self, handler, params):
         args = inspect.getargs(handler.__code__)[0]

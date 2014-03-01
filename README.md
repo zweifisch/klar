@@ -184,24 +184,21 @@ def login(emitter):
 	emitter.emit('user-login', userid=id)
 ```
 
-## post processing(TBD)
+## post processing
 
 ```python
-def jsonp(body, headers, request):
-	callback = request.params.get('callback')
-	if callback:
-		body = "%s(%s)" % (callback, json.dumps(body))
-		headers["Content-Type"] = ["application/javascript"]
-		return {"body": body, "heders", headers}
+# special params: body, code, headers
+def jsonp(body, request):
+    callback = request.query.get('callback')
+    if callback:
+        body = "%s(%s)" % (callback, json.dumps(body))
+        return body, ("Content-Type", "application/javascript")
 
 @app.get('/resource') -> jsonp:
 	return {"key": "value"}
 ```
 
-special argumants: `code`, `body`, `headers` return them in an dict to take
-effect, all of them are optional
-
-to use more than one processors
+more than one processors:
 
 ```python
 @app.get('/resource') -> (jsonp, etags):

@@ -282,6 +282,7 @@ class Router:
 
     def __init__(self):
         self.rules = []
+        self.indexes = {}
 
     def add_rule(self, method, pattern, handler=None):
         method = method.upper()
@@ -290,9 +291,17 @@ class Router:
         if handler is None:
             def decorate(handler):
                 self.rules.append((method, pattern, handler))
+                self.index(self.get_index(pattern), (method, pattern, handler))
                 return handler
             return decorate
         self.rules.append((method, pattern, handler))
+        self.index(self.get_index(pattern), (method, pattern, handler))
+
+    def index(self, idx, rule):
+        if idx not in self.indexes:
+            self.indexes[idx] = [rule]
+        else:
+            self.indexes[idx].append(rule)
 
     def add_rules(self, rules):
         for rule in rules:
@@ -303,8 +312,26 @@ class Router:
                              re.sub(r'<([^>]+)>', r'(?P<\1>[^/]+)', pattern))
         return pattern
 
+    def get_index(self, pattern):
+        pattern = pattern.pattern.lstrip('^').rstrip('$')
+        pos = pattern.find('(')
+        if pos != -1:
+            pattern = pattern[:pos]
+        segments = pattern.split('/')
+        segments.pop()
+        return '/'.join(segments)
+
     def dispatch(self, method, path):
-        for _method, pattern, handler in self.rules:
+        segments = path.split('/')
+        while len(segments):
+            index = '/'.join(segments)
+            if index in self.indexes:
+                return self.match_rule(method, path, self.indexes[index])
+            segments.pop()
+        return None, None
+
+    def match_rule(self, method, path, rules):
+        for _method, pattern, handler in rules:
             if _method != method:
                 continue
             result = pattern.match(path)

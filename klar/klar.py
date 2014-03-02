@@ -34,23 +34,23 @@ class App:
     def __init__(self):
         self.provider = Provider(
             router=Router,
-            request=Request,
-            cookies=Cookies,
             cache=Cache,
-            session=Session,
             response=Response,
             emitter=EventEmitter,
         )
+        self.provide('request', Request, on_request=True)
+        self.provide('cookies', Cookies, on_request=True)
+        self.provide('session', Session, on_request=True)
 
         @self.provide('provider')
         def provider():
             return self.provider
 
-        @self.provide('body')
+        @self.provide('body', on_request=True)
         def body(request):
             return request.body
 
-        @self.provide('uploads')
+        @self.provide('uploads', on_request=True)
         def uploads(request):
             return request.uploads
 
@@ -75,16 +75,15 @@ class App:
         body, status, headers = self.format_response(body, code, headers)
 
         if code != 500:
-            self.provider.session.flush()
-            cookies = self.provider.cookies.output()
-            if cookies:
-                headers.extend(cookies)
+            if self.provider.accessed('session'):
+                self.provider.session.flush()
+            if self.provider.accessed('cookies'):
+                cookies = self.provider.cookies.output()
+                if cookies:
+                    headers.extend(cookies)
 
-        del self.provider.request
-        del self.provider.body
-        del self.provider.uploads
-        del self.provider.cookies
-        del self.provider.session
+        self.provider.reset_none_persist()
+
         start_response(status, headers)
         if type(body) is str:
             body = body.encode('utf-8')
@@ -178,14 +177,14 @@ class App:
                                     % name)
         return {name: params[name] for name in args}
 
-    def provide(self, name, component=None):
+    def provide(self, name, component=None, on_request=False):
         if component is None:
             def decorate(fn):
-                self.provider.register(name, fn)
+                self.provider.register(name, fn, persist=not on_request)
                 return fn
             return decorate
         else:
-            self.provider.register(name, component)
+            self.provider.register(name, component, persist=not on_request)
 
     def on(self, event, handler=None):
         if handler:
@@ -247,6 +246,7 @@ class Provider:
 
     def __init__(self, protos=None, **kwargs):
         self.protos = protos or kwargs
+        self._once_ = []
 
     def __getattr__(self, name):
         if name not in self.protos:
@@ -264,8 +264,18 @@ class Provider:
         if name in self.__dict__:
             del self.__dict__[name]
 
-    def register(self, name, value):
+    def register(self, name, value, persist=True):
         self.protos[name] = value
+        if not persist:
+            self._once_.append(name)
+
+    def accessed(self, name):
+        return name in self.__dict__
+
+    def reset_none_persist(self):
+        for name in self._once_:
+            if name in self.__dict__:
+                del self.__dict__[name]
 
 
 class Router:
@@ -413,7 +423,7 @@ class Cookies:
 
 class Session:
 
-    chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-'
+    chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 
     def __init__(self, cookies, cache, sid_key='ksid', key_len=16,
                  key_prefix='sid:'):

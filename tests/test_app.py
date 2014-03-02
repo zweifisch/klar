@@ -298,3 +298,12 @@ class TestApp:
         res = get(app, '/')
         assert res['status'] == '200 OK'
         assert res['body'] == '{"key": "value"}'
+
+    def test_ajax(self):
+        app = App()
+
+        @app.get('/api')
+        def ajax(request):
+            return "ajax" if request.is_ajax else "not ajax"
+        res = get(app, '/api', headers={"X-Requested-With": "XMLHttpRequest"})
+        assert res['body'] == 'ajax'

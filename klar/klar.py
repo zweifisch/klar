@@ -6,7 +6,7 @@ import random
 import inspect
 import traceback
 import mimetypes
-from functools import partial
+from functools import partial, update_wrapper
 from urllib import parse
 from http.cookies import SimpleCookie
 import http.client
@@ -345,6 +345,17 @@ class Router:
                           for (method, pattern, handler) in self.rules])
 
 
+class cached_property:
+
+    def __init__(self, fn):
+        update_wrapper(self, fn)
+        self.fn = fn
+
+    def __get__(self, instance, cls):
+        ret = instance.__dict__[self.fn.__name__] = self.fn(instance)
+        return ret
+
+
 class Request:
 
     def __init__(self, environ):
@@ -353,15 +364,22 @@ class Request:
     def env(self, key, default=None):
         return self.environ.get(key, default)
 
-    @property
+    def header(self, key, default=None):
+        return self.environ.get('HTTP_' + key, default)
+
+    @cached_property
     def content_type(self):
         return parse_header(self.environ['CONTENT_TYPE'])
 
-    @property
+    @cached_property
+    def content_length(self):
+        return int(self.environ['CONTENT_LENGTH'])
+
+    @cached_property
     def query(self):
         return dict(parse.parse_qsl(self.environ['QUERY_STRING']))
 
-    @property
+    @cached_property
     def body(self):
         if not hasattr(self, '_body'):
             self.parse_body()
@@ -388,19 +406,23 @@ class Request:
             return ''
         return self.environ['wsgi.input'].read(content_length).decode()
 
-    @property
+    @cached_property
     def uploads(self):
         if not hasattr(self, '_uploads'):
             self.parse_body()
         return self._uploads
 
-    @property
+    @cached_property
     def path(self):
         return self.environ['PATH_INFO']
 
-    @property
+    @cached_property
     def method(self):
         return self.environ['REQUEST_METHOD'].upper()
+
+    @cached_property
+    def is_ajax(self):
+        return self.environ.get('HTTP_X_REQUESTED_WITH') == 'XMLHttpRequest'
 
 
 class Cookies:

@@ -3,8 +3,9 @@ from io import BytesIO
 import json
 from http.cookies import SimpleCookie
 
+
 def request(app, path, content_type, query={}, body='', method="GET",
-            cookies={}):
+            cookies={}, headers={}):
     ret = {}
 
     def start_response(status, headers):
@@ -26,8 +27,13 @@ def request(app, path, content_type, query={}, body='', method="GET",
         'CONTENT_TYPE': content_type,
     }
 
+    if headers:
+        env.update({("HTTP_%s" % k).replace('-', '_').upper(): v
+                    for k, v in headers.items()})
+
     if cookies:
-        env['HTTP_COOKIE'] = ';'.join([k + '=' + v for k, v in cookies.items()])
+        env['HTTP_COOKIE'] = ';'.join([k + '=' + v
+                                       for k, v in cookies.items()])
 
     body = app(env, start_response)
     ret['body'] = ''.join(map(lambda x: x.decode(), body))

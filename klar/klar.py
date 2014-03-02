@@ -4,6 +4,7 @@ import json
 import types
 import random
 import inspect
+import logging
 import traceback
 import mimetypes
 from functools import partial, update_wrapper
@@ -31,7 +32,8 @@ class App:
 
     methods = [method for _, _, method in rules]
 
-    def __init__(self):
+    def __init__(self, name='klar_app'):
+        self.name = name
         self.provider = Provider(
             router=Router,
             cache=Cache,
@@ -54,6 +56,14 @@ class App:
         def uploads(request):
             return request.uploads
 
+        @self.provide('logger')
+        def logger():
+            l = logging.getLogger(name)
+            l.setLevel(logging.DEBUG)
+            return l
+
+        self.provide('config', load_config)
+
     def __getattr__(self, name):
         if name in ['get', 'post', 'delete', 'put', 'patch', 'head']:
             return partial(self.provider.router.add_rule, name)
@@ -69,7 +79,7 @@ class App:
             headers = []
         except Exception as e:
             body, code, headers = '', 500, []
-            print(traceback.format_exc())
+            self.provider.logger.error(traceback.format_exc())
 
         self.provider.emitter.emit(code)
         body, status, headers = self.format_response(body, code, headers)
@@ -111,7 +121,7 @@ class App:
         except ValidationError as e:
             return e.message, 400, {}
         except SchemaError as e:
-            print(traceback.format_exc())
+            self.provider.logger.error(traceback.format_exc())
             return "Error in schema: " + e.message, 500, {}
 
         response = self.normalize_response(handler(**prepared_params))
@@ -194,7 +204,7 @@ class App:
 
     def run(self, port=3000):
         from wsgiref.simple_server import make_server
-        print('listen on %s' % port)
+        self.provider.logger.info('listen on %s' % port)
         make_server('', port, self).serve_forever()
 
     def resource(self, url_path=None, module=None):
@@ -365,7 +375,8 @@ class Request:
         return self.environ.get(key, default)
 
     def header(self, key, default=None):
-        return self.environ.get('HTTP_' + key, default)
+        return self.environ.get('HTTP_' + key.replace('-', '_').upper(),
+                                default)
 
     @cached_property
     def content_type(self):
@@ -657,3 +668,10 @@ def method(httpmethod):
         fn.__httpmethod__ = httpmethod
         return fn
     return add_method
+
+
+def load_config():
+    path = os.environ.get('CONFIG') or "config"
+    import imp
+    mod = imp.load_source(path, '%s.py' % path)
+    return {k: getattr(mod, k) for k in dir(mod) if not k.startswith('_')}

@@ -5,7 +5,6 @@ import types
 import random
 import inspect
 import logging
-import traceback
 import mimetypes
 from functools import partial, update_wrapper
 from urllib import parse
@@ -79,7 +78,7 @@ class App:
             headers = []
         except Exception as e:
             body, code, headers = '', 500, []
-            self.provider.logger.error(traceback.format_exc())
+            self.provider.logger.error('Uncaught exception', exc_info=True)
 
         self.provider.emitter.emit(code)
         body, status, headers = self.format_response(body, code, headers)
@@ -121,7 +120,7 @@ class App:
         except ValidationError as e:
             return e.message, 400, {}
         except SchemaError as e:
-            self.provider.logger.error(traceback.format_exc())
+            self.provider.logger.error("Error in schema", exc_info=True)
             return "Error in schema: " + e.message, 500, {}
 
         response = self.normalize_response(handler(**prepared_params))

@@ -36,7 +36,6 @@ class App:
         self.provider = Provider(
             router=Router,
             cache=Cache,
-            response=Response,
             emitter=EventEmitter,
         )
         self.provide('request', Request, on_request=True)
@@ -566,14 +565,6 @@ class EventEmitter:
             self.listeners[event] = [handler]
 
 
-class Config:
-    pass
-
-
-class Response:
-    pass
-
-
 class HttpError(Exception):
     pass
 
@@ -669,8 +660,12 @@ def method(httpmethod):
     return add_method
 
 
-def load_config():
-    path = os.environ.get('CONFIG') or "config"
-    import imp
-    mod = imp.load_source(path, '%s.py' % path)
-    return {k: getattr(mod, k) for k in dir(mod) if not k.startswith('_')}
+def load_config(logger):
+    path = os.environ.get('CONFIG') or "config.py"
+    if os.path.isfile(path):
+        import imp
+        mod = imp.load_source(path[:-3], '%s' % path)
+        return {k: getattr(mod, k) for k in dir(mod) if not k.startswith('_')}
+    else:
+        logger.warn("failed to load config %s" % path)
+        return {}

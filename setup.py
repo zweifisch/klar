@@ -3,7 +3,7 @@ from setuptools import setup
 
 setup(
     name='klar',
-    version='0.0.0',
+    version='0.0.1',
     description='a micro web framework',
     author='Feng Zhou',
     author_email='zf.pascal@gmail.com',

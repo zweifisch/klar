@@ -304,3 +304,26 @@ app.static('/public/')
 ```
 app.static('/public/', 'path/to/public/dir')
 ```
+
+## config
+
+config file path will be read from enviroment variable `$CONFIG`
+
+if it's empty config.py will be loaded
+
+config.py
+
+```python
+mongo = {
+    "host": "127.0.0.1"
+    "port": 27017
+}
+```
+
+```python
+from pymongo import MongoClient
+
+@app.provide('db')
+def db(config):
+    return MongoClient(**config.mongo)
+```

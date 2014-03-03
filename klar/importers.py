@@ -1,7 +1,6 @@
 import os
 import sys
 import imp
-import re
 import types
 
 
@@ -103,6 +102,15 @@ def __call__(kvs=None):
 
     def get_source(self, filename):
         return self.code_template % slurp(filename)
+
+
+class ConfigImporter(BaseImporter):
+    def get_source(self, filename):
+        return """
+from configparser import ConfigParser
+config = ConfigParser()
+config.read('%(filename)s')
+""" % dict(filename=filename)
 
 
 def slurp(filename):

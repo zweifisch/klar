@@ -288,9 +288,12 @@ class Provider:
 
 class Router:
 
+    param_macher = re.compile(r"\(\?P<([^>]+)>[^)]*\)")
+
     def __init__(self):
         self.rules = []
         self.indexes = {}
+        self.reverse_indexes = {}
 
     def add_rule(self, method, pattern, handler=None):
         method = method.upper()
@@ -298,12 +301,17 @@ class Router:
             pattern = self.parse_pattern(pattern)
         if handler is None:
             def decorate(handler):
-                self.rules.append((method, pattern, handler))
-                self.index(self.get_index(pattern), (method, pattern, handler))
+                self._add_rule(method, pattern, handler)
                 return handler
             return decorate
+        self._add_rule(method, pattern, handler)
+
+    def _add_rule(self, method, pattern, handler):
         self.rules.append((method, pattern, handler))
         self.index(self.get_index(pattern), (method, pattern, handler))
+        if type(handler) is not str:
+            handler = handler.__qualname__
+        self.reverse_indexes[handler] = pattern
 
     def index(self, idx, rule):
         if idx not in self.indexes:
@@ -346,6 +354,15 @@ class Router:
             if result:
                 return handler, result.groupdict()
         return None, None
+
+    def url_for(self, handler, **kwargs):
+        if type(handler) is not str:
+            handler = handler.__qualname__
+        if handler not in self.reverse_indexes:
+            return None
+        pattern = self.reverse_indexes[handler].pattern.lstrip('^').rstrip('$')
+        return self.param_macher.sub(lambda m: str(kwargs[m.group(1)]),
+                                     pattern)
 
     def __repr__(self):
         return "\n".join(["%s %s -> %s" %

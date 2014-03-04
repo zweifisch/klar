@@ -1,4 +1,4 @@
-from klar import App, method
+from klar import App, method, etag
 from request import get, json_request, post, patch
 import json
 import datetime
@@ -307,3 +307,19 @@ class TestApp:
             return "ajax" if request.is_ajax else "not ajax"
         res = get(app, '/api', headers={"X-Requested-With": "XMLHttpRequest"})
         assert res['body'] == 'ajax'
+
+    def test_etag(self):
+        app = App()
+
+        @app.get('/etag')
+        def handler(request) -> etag:
+            return "content"
+
+        res = get(app, '/etag')
+        assert res['body'] == 'content'
+        assert res['status'] == '200 OK'
+
+        headers = dict(res['headers'])
+        res = get(app, '/etag', headers={"If-None-Match": headers['Etag']})
+        assert res['status'].startswith('304')
+        assert res['body'] == ''

@@ -1,5 +1,6 @@
 import os
 import re
+import zlib
 import json
 import types
 import random
@@ -122,7 +123,8 @@ class App:
             self.provider.logger.error("Error in schema", exc_info=True)
             return "Error in schema: " + e.message, 500, {}
 
-        response = self.normalize_response(handler(**prepared_params))
+        response = self.normalize_response(handler(**prepared_params),
+                                           code=200)
 
         processers = handler.__annotations__.get('return')
         if type(processers) is tuple:
@@ -131,8 +133,10 @@ class App:
             response = self.process_response(response, processers)
         return response['body'], response['code'], response['headers']
 
-    def normalize_response(self, response):
-        body, code, headers = None, 200, {}
+    def normalize_response(self, response, **defaults):
+        body = defaults.get('body')
+        code = defaults.get('code')
+        headers = defaults.get('headers', {})
         if type(response) == tuple:
             for item in response:
                 if type(item) is tuple:
@@ -158,7 +162,10 @@ class App:
                 if resp:
                     resp = self.normalize_response(resp)
                     response['headers'].update(resp.pop('headers'))
-                    response.update(resp)
+                    if resp['body'] is not None:
+                        response['body'] = resp['body']
+                    if resp['code'] is not None:
+                        response['code'] = resp['code']
         return response
 
     def prepare_params(self, handler, params):
@@ -355,7 +362,7 @@ class Router:
                 return handler, result.groupdict()
         return None, None
 
-    def url_for(self, handler, **kwargs):
+    def path_for(self, handler, **kwargs):
         if type(handler) is not str:
             handler = handler.__qualname__
         if handler not in self.reverse_indexes:
@@ -686,3 +693,13 @@ def load_config(logger):
     else:
         logger.warn("failed to load config %s" % path)
         return {}
+
+
+def etag(code, body, request):
+    if code == 200 and body:
+        client = request.header('if-none-match')
+        server = "%X" % (zlib.crc32(bytes(body, "utf-8")) & 0xFFFFFFFF)
+        if client == server:
+            return 304, ''
+        else:
+            return ("Etag", server),

@@ -38,5 +38,5 @@ class TestRouter:
     def test_reverse(self):
         router = Router()
         router.add_rule('GET', '/avatar/<id>.<ext>', 'handler')
-        url = router.url_for('handler', id=13132, ext="png")
+        url = router.path_for('handler', id=13132, ext="png")
         assert '/avatar/13132.png' == url

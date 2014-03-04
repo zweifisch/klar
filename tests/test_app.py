@@ -323,3 +323,32 @@ class TestApp:
         res = get(app, '/etag', headers={"If-None-Match": headers['Etag']})
         assert res['status'].startswith('304')
         assert res['body'] == ''
+
+        headers = dict(res['headers'])
+        res = get(app, '/etag', headers={"If-None-Match": 'etag'})
+        assert res['status'].startswith('200')
+        assert res['body'] == 'content'
+
+    def test_last_modified(self):
+        app = App()
+
+        @app.get('/last-modified')
+        def handler():
+            now = datetime.datetime.utcnow().replace(microsecond=0)
+            return "content", ("Last-Modified", now)
+
+        res = get(app, '/last-modified')
+        assert res['body'] == 'content'
+        assert res['status'] == '200 OK'
+
+        now = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
+        res = get(app, '/last-modified', headers={"If-Modified-Since": now})
+        assert res['body'] == 'content'
+        assert res['status'].startswith('200')
+
+        yesterday = datetime.datetime.utcnow() + datetime.timedelta(days=-1)
+        yesterday = yesterday.strftime("%a, %d %b %Y %H:%M:%S GMT")
+        res = get(app, '/last-modified', headers={"If-Modified-Since":
+                                                  yesterday})
+        assert res['body'] == ''
+        assert res['status'].startswith('304')

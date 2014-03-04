@@ -6,6 +6,7 @@ import types
 import random
 import inspect
 import logging
+import datetime
 import mimetypes
 from functools import partial, update_wrapper
 from urllib import parse
@@ -99,14 +100,16 @@ class App:
         return [body]
 
     def format_response(self, body, code, headers):
-        default_headers = {'Content-Type': 'text/html; charset=utf-8'}
+        _headers = {'Content-Type': 'text/html; charset=utf-8'}
         if body is None:
             body = ''
         if type(body) not in [str, bytes]:
             body = json.dumps(body)
             headers = {'Content-Type': 'application/json; charset=utf-8'}
-        default_headers.update(headers)
-        return body, get_status(code), list(default_headers.items())
+        _headers.update(headers)
+        if code == 200 and is_fresh(self.provider.environ, _headers):
+            code, body = 304, ''
+        return body, get_status(code), list(_headers.items())
 
     def process_request(self):
         handler, params = self.provider.router.dispatch(
@@ -697,9 +700,20 @@ def load_config(logger):
 
 def etag(code, body, request):
     if code == 200 and body:
-        client = request.header('if-none-match')
-        server = "%X" % (zlib.crc32(bytes(body, "utf-8")) & 0xFFFFFFFF)
-        if client == server:
-            return 304, ''
-        else:
-            return ("Etag", server),
+        return ("Etag", "%X" %
+                (zlib.crc32(bytes(body, "utf-8")) & 0xFFFFFFFF)),
+
+
+def is_fresh(request_headers, response_headers):
+    last_modified = response_headers.get('Last-Modified')
+    if last_modified:
+        fmt = "%a, %d %b %Y %H:%M:%S GMT"
+        response_headers['Last-Modified'] = last_modified.strftime(fmt)
+        modified_since = request_headers.get('HTTP_IF_MODIFIED_SINCE')
+        if modified_since:
+            modified_since = datetime.datetime.strptime(modified_since, fmt)
+            if modified_since < last_modified:
+                return True
+    etag = response_headers.get('Etag')
+    if etag:
+        return request_headers.get('HTTP_IF_NONE_MATCH') == etag

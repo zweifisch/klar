@@ -352,3 +352,7 @@ class TestApp:
                                                   yesterday})
         assert res['body'] == ''
         assert res['status'].startswith('304')
+
+        res = get(app, '/last-modified', headers={"If-Modified-Since": 'yesterday'})
+        assert res['body'] == 'content'
+        assert res['status'].startswith('200')

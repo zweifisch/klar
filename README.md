@@ -327,3 +327,18 @@ from pymongo import MongoClient
 def db(config):
     return MongoClient(**config.mongo)
 ```
+
+## reversed routing
+
+```python
+@app.get('user/<id>')
+def user(id:str):
+    pass
+```
+
+get a link to previous handler
+
+```
+def another_handler(router):
+    href = router.path_for('user', {'id'='3221'})
+```

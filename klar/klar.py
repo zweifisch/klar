@@ -6,13 +6,13 @@ import types
 import random
 import inspect
 import logging
-import datetime
 import mimetypes
 from functools import partial, update_wrapper
 from urllib import parse
-from http.cookies import SimpleCookie
 import http.client
+from http.cookies import SimpleCookie
 from cgi import FieldStorage, parse_header
+from datetime import datetime
 
 from jsonschema import validate
 from jsonschema.exceptions import ValidationError, SchemaError
@@ -711,9 +711,12 @@ def is_fresh(request_headers, response_headers):
         response_headers['Last-Modified'] = last_modified.strftime(fmt)
         modified_since = request_headers.get('HTTP_IF_MODIFIED_SINCE')
         if modified_since:
-            modified_since = datetime.datetime.strptime(modified_since, fmt)
-            if modified_since < last_modified:
-                return True
+            try:
+                modified_since = datetime.strptime(modified_since, fmt)
+                if modified_since < last_modified:
+                    return True
+            except:
+                pass
     etag = response_headers.get('Etag')
     if etag:
         return request_headers.get('HTTP_IF_NONE_MATCH') == etag

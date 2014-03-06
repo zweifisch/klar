@@ -704,6 +704,9 @@ def etag(code, body, request):
                 (zlib.crc32(bytes(body, "utf-8")) & 0xFFFFFFFF)),
 
 
+_etag_delimiter = re.compile(' *, *')
+
+
 def is_fresh(request_headers, response_headers):
     last_modified = response_headers.get('Last-Modified')
     if last_modified:
@@ -718,5 +721,8 @@ def is_fresh(request_headers, response_headers):
             except:
                 pass
     etag = response_headers.get('Etag')
-    if etag:
-        return request_headers.get('HTTP_IF_NONE_MATCH') == etag
+    etags = request_headers.get('HTTP_IF_NONE_MATCH')
+    if etag and etags:
+        etags = _etag_delimiter.split(etags)
+        if etags:
+            return etags[0] == '*' or etag in etags

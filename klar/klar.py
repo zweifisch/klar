@@ -17,27 +17,17 @@ from datetime import datetime
 from jsonschema import validate
 from jsonschema.exceptions import ValidationError, SchemaError
 
+from biro import Router
+
 
 class App:
-
-    rules = [
-        ('GET',    '%(path)s',               'query'),
-        ('POST',   '%(path)s',               'create'),
-        ('GET',    '%(path)s/<%(id)s>',      'show'),
-        ('PUT',    '%(path)s/<%(id)s>',      'replace'),
-        ('PATCH',  '%(path)s/<%(id)s>',      'modify'),
-        ('DELETE', '%(path)s/<%(id)s>',      'destroy'),
-        ('GET',    '%(path)s/new',           'new'),
-        ('GET',    '%(path)s/<%(id)s>/edit', 'edit'),
-    ]
-
-    methods = [method for _, _, method in rules]
 
     def __init__(self, name='klar_app'):
         self.name = name
         self.provider = Provider(
-            router=Router,
             cache=Cache,
+            router=Router,
+            rest=RestfulRouter,
             emitter=EventEmitter,
         )
         self.provide('request', Request, on_request=True)
@@ -64,11 +54,43 @@ class App:
 
         self.provide('config', load_config)
 
-    def __getattr__(self, name):
-        if name in ['get', 'post', 'delete', 'put', 'patch', 'head']:
-            return partial(self.provider.router.add_rule, name)
-        else:
-            raise HttpError(500, "method %s not exists" % name)
+        def route(method, pattern, handler=None):
+            if handler is None:
+                return partial(self.provider.router.append, method, pattern)
+            return self.provider.router.append(method, pattern, handler)
+
+        for method in ['get', 'post', 'delete', 'put', 'patch', 'head']:
+            m = partial(route, method.upper())
+            m.__doc__ = """register a %(method)s handler
+
+            Example:
+
+                %(method)s('/path/<param>', handler)
+
+                @%(method)s('/path/<param>')
+                def handler(param):
+                    pass
+            """ % dict(method=method)
+            setattr(self, method, m)
+
+        self.resource = self.provider.rest.resource
+        self.resources = self.provider.rest.resources
+
+    def route(self, pattern, methods, handler=None):
+        """register multiple routing rules
+
+        Example:
+
+             @route('/path/<param>', methods=['GET', 'POST'])
+             def handler():
+                 pass
+
+        """
+        if handler is None:
+            return partial(self.route, pattern, methods)
+        for method in methods:
+            self.provider.router.append(method.upper(), pattern, handler)
+        return handler
 
     def __call__(self, environ, start_response):
         self.provider.environ = environ
@@ -112,7 +134,7 @@ class App:
         return body, get_status(code), list(_headers.items())
 
     def process_request(self):
-        handler, params = self.provider.router.dispatch(
+        handler, params = self.provider.router.match(
             self.provider.request.method, self.provider.request.path)
         if not handler:
             return '', 404, {}
@@ -215,49 +237,11 @@ class App:
         self.provider.logger.info('listen on %s' % port)
         make_server('', port, self).serve_forever()
 
-    def resource(self, url_path=None, module=None):
-        if url_path is None:
-            url_path = '/' + module.__name__.replace('.', '/')
-        if module is None:
-            return partial(self.register_resource, url_path)
-        else:
-            self.register_resource(url_path, module)
-
-    def register_resource(self, url_path, module):
-        url_id = '%s_id' % url_path.split('/').pop()
-        vals = {'path': url_path, 'id': url_id}
-        rules = [(method, pattern % vals, getattr(module, handler))
-                 for method, pattern, handler in self.rules
-                 if hasattr(module, handler)]
-
-        if isinstance(type(module), types.ModuleType):
-            fns = get_module_fns(module)
-        else:
-            fns = get_methods(module)
-
-        custom_rules = [(getattr(fn, '__httpmethod__', 'GET'),
-                        '%s/<%s>/%s' % (url_path, url_id, fn.__name__),
-                        fn) for fn in fns if fn.__name__ not in self.methods]
-        self.provider.router.add_rules(rules)
-        self.provider.router.add_rules(custom_rules)
-
-    def resources(self, *resources, prefix=''):
-        for resource in resources:
-            url_path = prefix + '/' + resource.__name__.split('.').pop()
-            self.register_resource(url_path, resource)
-
     def static(self, url_root, fs_root=None):
         if fs_root is None:
             fs_root = url_root[1:]
-        self.provider.router.add_rule('GET', re.compile(
+        self.append('GET', re.compile(
             "^" + url_root + "(?P<url>.+)$"), static_handler(fs_root))
-
-    def route(self, path, methods, handler=None):
-        if handler:
-            for method in methods:
-                self.provider.router.add_rule(method, path, handler)
-        else:
-            return partial(self.route, path, methods)
 
 
 class Provider:
@@ -294,90 +278,6 @@ class Provider:
         for name in self._once_:
             if name in self.__dict__:
                 del self.__dict__[name]
-
-
-class Router:
-
-    param_macher = re.compile(r"\(\?P<([^>]+)>[^)]*\)")
-
-    def __init__(self):
-        self.rules = []
-        self.indexes = {}
-        self.reverse_indexes = {}
-
-    def add_rule(self, method, pattern, handler=None):
-        method = method.upper()
-        if type(pattern) is str:
-            pattern = self.parse_pattern(pattern)
-        if handler is None:
-            def decorate(handler):
-                self._add_rule(method, pattern, handler)
-                return handler
-            return decorate
-        self._add_rule(method, pattern, handler)
-
-    def _add_rule(self, method, pattern, handler):
-        self.rules.append((method, pattern, handler))
-        self.index(self.get_index(pattern), (method, pattern, handler))
-        if type(handler) is not str:
-            handler = handler.__qualname__
-        self.reverse_indexes[handler] = pattern
-
-    def index(self, idx, rule):
-        if idx not in self.indexes:
-            self.indexes[idx] = [rule]
-        else:
-            self.indexes[idx].append(rule)
-
-    def add_rules(self, rules):
-        for rule in rules:
-            self.add_rule(*rule)
-
-    def parse_pattern(self, pattern):
-        pattern = re.compile('^%s$' %
-                             re.sub(r'<([^>]+)>', r'(?P<\1>[^/]+)', pattern))
-        return pattern
-
-    def get_index(self, pattern):
-        pattern = pattern.pattern.lstrip('^').rstrip('$')
-        pos = pattern.find('(')
-        if pos != -1:
-            pattern = pattern[:pos]
-        segments = pattern.split('/')
-        segments.pop()
-        return '/'.join(segments)
-
-    def dispatch(self, method, path):
-        segments = path.split('/')
-        while len(segments):
-            index = '/'.join(segments)
-            if index in self.indexes:
-                return self.match_rule(method, path, self.indexes[index])
-            segments.pop()
-        return None, None
-
-    def match_rule(self, method, path, rules):
-        for _method, pattern, handler in rules:
-            if _method != method:
-                continue
-            result = pattern.match(path)
-            if result:
-                return handler, result.groupdict()
-        return None, None
-
-    def path_for(self, handler, **kwargs):
-        if type(handler) is not str:
-            handler = handler.__qualname__
-        if handler not in self.reverse_indexes:
-            return None
-        pattern = self.reverse_indexes[handler].pattern.lstrip('^').rstrip('$')
-        return self.param_macher.sub(lambda m: str(kwargs[m.group(1)]),
-                                     pattern)
-
-    def __repr__(self):
-        return "\n".join(["%s %s -> %s" %
-                          (method, pattern.pattern, handler.__qualname__)
-                          for (method, pattern, handler) in self.rules])
 
 
 class cached_property:
@@ -596,6 +496,79 @@ class HttpError(Exception):
     pass
 
 
+class RestfulRouter:
+
+    restful_routes = [
+        ('GET',    '%(path)s',               'query'),
+        ('POST',   '%(path)s',               'create'),
+        ('GET',    '%(path)s/<%(id)s>',      'show'),
+        ('PUT',    '%(path)s/<%(id)s>',      'replace'),
+        ('PATCH',  '%(path)s/<%(id)s>',      'modify'),
+        ('DELETE', '%(path)s/<%(id)s>',      'destroy'),
+        ('GET',    '%(path)s/new',           'new'),
+        ('GET',    '%(path)s/<%(id)s>/edit', 'edit'),
+    ]
+
+    restful_methods = [method for _, _, method in restful_routes]
+
+    def __init__(self, router):
+        self.router = router
+
+    def resource(self, url_path=None, module=None):
+        """register a restful resource
+
+        Example:
+
+            @resource('/article')
+            class Article:
+                def show(article_id):
+                    pass
+
+                @method('put')
+                def upvote(article_id):
+                    pass
+
+        """
+        if url_path is None:
+            url_path = '/' + module.__name__.replace('.', '/')
+        if module is None:
+            return partial(self.register_resource, url_path)
+        else:
+            return self.register_resource(url_path, module)
+
+    def resources(self, *resources, prefix=''):
+        """register a list of restful resources
+
+        Example:
+
+            resources(articles, users, '/api/v1')
+
+        """
+        for resource in resources:
+            url_path = prefix + '/' + resource.__name__.split('.').pop()
+            self.register_resource(url_path, resource)
+
+    def register_resource(self, url_path, module):
+        url_id = '%s_id' % url_path.split('/').pop()
+        vals = {'path': url_path, 'id': url_id}
+        rules = [(method, pattern % vals, getattr(module, handler))
+                 for method, pattern, handler in self.restful_routes
+                 if hasattr(module, handler)]
+
+        if isinstance(type(module), types.ModuleType):
+            fns = get_module_fns(module)
+        else:
+            fns = get_methods(module)
+
+        custom_rules = [(getattr(fn, '__httpmethod__', 'GET'),
+                        '%s/<%s>/%s' % (url_path, url_id, fn.__name__),
+                        fn) for fn in fns
+                        if fn.__name__ not in self.restful_methods]
+        self.router.extend(rules)
+        self.router.extend(custom_rules)
+        return module
+
+
 def invoke(fn, *param_dicts):
     "call a function with a list of dicts providing params"
     prepared_params = {}
@@ -666,27 +639,6 @@ def static_handler(fs_root):
     return handler
 
 
-def get_module_fns(module):
-    "get defined functions of module"
-    attrs = [getattr(module, a) for a in dir(module) if not a.startswith('_')]
-    return [attr for attr in attrs if isinstance(attr, types.FunctionType)
-            and attr.__module__ == module.__name__]
-
-
-def get_methods(cls):
-    "get public methods of a class"
-    attrs = [getattr(cls, a) for a in dir(cls) if not a.startswith('_')]
-    return [attr for attr in attrs if isinstance(attr, types.FunctionType)]
-
-
-def method(httpmethod):
-    "decorator to overwrite default method(GET) for custom actions"
-    def add_method(fn):
-        fn.__httpmethod__ = httpmethod
-        return fn
-    return add_method
-
-
 def load_config(logger):
     path = os.environ.get('CONFIG') or "config.py"
     if os.path.isfile(path):
@@ -726,3 +678,26 @@ def is_fresh(request_headers, response_headers):
         etags = _etag_delimiter.split(etags)
         if etags:
             return etags[0] == '*' or etag in etags
+
+
+def get_module_fns(module):
+    "get defined functions of a module"
+    attrs = [getattr(module, a) for a in dir(module) if not a.startswith('_')]
+    return [attr for attr in attrs if isinstance(attr, types.FunctionType)
+            and attr.__module__ == module.__name__]
+
+
+def get_methods(cls):
+    "get public methods of a class"
+    attrs = [getattr(cls, a) for a in dir(cls) if not a.startswith('_')]
+    return [attr for attr in attrs if isinstance(attr, types.FunctionType)]
+
+
+def method(httpmethod):
+    """decorator to overwrite default method(GET) for custom actions,
+    intended to be used within restful resource
+    """
+    def add_method(fn):
+        fn.__httpmethod__ = httpmethod.upper()
+        return fn
+    return add_method

@@ -31,9 +31,9 @@ class TestApp:
         def bar(request):
             return '%s: %s' % (request.method, request.path)
 
-        assert get(app=app, path='/')['body'] == 'index'
-        assert get(app=app, path='/foo')['body'] == 'foo'
-        assert get(app=app, path='/baz')['status'].startswith('404')
+        assert get(app, '/')['body'] == 'index'
+        assert get(app, '/foo')['body'] == 'foo'
+        assert get(app, '/baz')['status'].startswith('404')
         assert get(app, '/bar')['body'] == 'GET: /bar'
         assert post(app, '/bar')['body'] == 'POST: /bar'
 

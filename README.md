@@ -2,7 +2,7 @@
 
 a micro web framework built for fun
 
-* argument annotation(so python3 is needed)
+* argument annotation
 * jsonschema intergration
 
 ```py
@@ -48,7 +48,7 @@ def create(body: product, db):
 	return {"ok": True}
 ```
 
-schemas can/should be imported from json or yaml files
+schemas can and should be imported from json or yaml files
 
 ```
 |--app.py
@@ -73,19 +73,6 @@ def create(body: product):
 
 ## dependency injection
 
-```python
-@app.get('/admin')
-def admin(session, response):
-	if session.get('user_id') is None
-		return response.redirect('/login')
-```
-
-useful ones:
-
-* request
-* session
-* cookie
-
 provide a custom dependency using decorator
 
 ```python
@@ -93,14 +80,25 @@ provide a custom dependency using decorator
 def get_db_connection():
 	conn = SomeDB(url="localhost:3349")
 	return conn
+
+import redis
+app.provide('cache', (redis.Redis, {'host': 'localhost'}))
 ```
 
-a more scalable way
+using `db` and `cache` in request handler
 
 ```python
-import redis
-app.provide('kv', (redis.Redis, {'host': 'localhost'}))
+@get('/article/<article_id>')
+def get_article(article_id:int, db, cache):
+    pass
 ```
+
+predefined components:
+
+* request
+* session
+* cookie
+* router
 
 ## rest
 
@@ -340,5 +338,5 @@ get a link to previous handler
 
 ```
 def another_handler(router):
-    href = router.path_for('user', {'id'='3221'})
+    href = router.path_for('user', id=3221)
 ```

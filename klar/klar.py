@@ -93,6 +93,9 @@ class App:
         return handler
 
     def __call__(self, environ, start_response):
+        return self.wsgi(environ, start_response)
+
+    def wsgi(self, environ, start_response):
         self.provider.environ = environ
         try:
             body, code, headers = self.process_request()
@@ -238,9 +241,11 @@ class App:
         make_server('', port, self).serve_forever()
 
     def static(self, url_root, fs_root=None):
+        if not url_root.endswith('/'):
+            url_root = url_root + '/'
         if fs_root is None:
             fs_root = url_root[1:]
-        self.append('GET', re.compile(
+        self.provider.router.append('GET', re.compile(
             "^" + url_root + "(?P<url>.+)$"), static_handler(fs_root))
 
 
@@ -248,7 +253,7 @@ class Provider:
 
     def __init__(self, protos=None, **kwargs):
         self.protos = protos or kwargs
-        self._once_ = []
+        self.__once__ = []
 
     def __getattr__(self, name):
         if name not in self.protos:
@@ -269,13 +274,13 @@ class Provider:
     def register(self, name, value, persist=True):
         self.protos[name] = value
         if not persist:
-            self._once_.append(name)
+            self.__once__.append(name)
 
     def accessed(self, name):
         return name in self.__dict__
 
     def reset_none_persist(self):
-        for name in self._once_:
+        for name in self.__once__:
             if name in self.__dict__:
                 del self.__dict__[name]
 
@@ -569,6 +574,13 @@ class RestfulRouter:
         return module
 
 
+class Response:
+    def __init__(self, body, code, headers):
+        self.body = body
+        self.code = code
+        self.headers = headers
+
+
 def invoke(fn, *param_dicts):
     "call a function with a list of dicts providing params"
     prepared_params = {}
@@ -628,14 +640,14 @@ def static_handler(fs_root):
     if not os.path.isdir(fs_root):
         raise HttpError(500, "static root %s should be a dir" % fs_root)
 
-    def handler(url):
+    def handler(url) -> etag:
         fs_path = os.path.join(fs_root, url)
         if not os.path.isfile(fs_path):
             return 404, "%s not exists" % fs_path
-        mimetype, _ = mimetypes.guess_type(fs_path)
-        fp = open(fs_path)
-        return fp.read(), ('Content-Type',
-                           mimetype or 'application/octet-stream')
+        mime = mimetypes.guess_type(fs_path)[0] or 'application/octet-stream'
+        with open(fs_path) as fp:
+            content = fp.read()
+        return content, ('Content-Type', mime)
     return handler
 
 

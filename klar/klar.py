@@ -535,8 +535,6 @@ class RestfulRouter:
         ('GET',    '%(path)s/<%(id)s>/edit', 'edit'),
     ]
 
-    restful_methods = [method for _, _, method in restful_routes]
-
     def __init__(self, router):
         self.router = router
 
@@ -586,10 +584,9 @@ class RestfulRouter:
         else:
             fns = get_methods(module)
 
-        custom_rules = [(getattr(fn, '__httpmethod__', 'GET'),
-                        '%s/<%s>/%s' % (url_path, url_id, fn.__name__),
-                        fn) for fn in fns
-                        if fn.__name__ not in self.restful_methods]
+        custom_rules = [(fn.__httpmethod__,
+                         '%s/<%s>/%s' % (url_path, url_id, fn.__name__),
+                        fn) for fn in fns]
         self.router.extend(rules)
         self.router.extend(custom_rules)
         return module
@@ -611,11 +608,11 @@ class JSONEncoder(json.JSONEncoder):
         self.__custom_encoders__[t] = encode
 
     def default(self, obj):
-        if isinstance(obj, Iterable):
-            return list(obj)
         for t in self.__custom_encoders__:
             if isinstance(obj, t):
                 return self.__custom_encoders__[t](obj)
+        if isinstance(obj, Iterable):
+            return list(obj)
         return super().default(self, obj)
 
 
@@ -731,16 +728,17 @@ def is_fresh(request_headers, response_headers):
 
 
 def get_module_fns(module):
-    "get defined functions of a module"
+    "get request handlers of a module"
     attrs = [getattr(module, a) for a in dir(module) if not a.startswith('_')]
     return [attr for attr in attrs if isinstance(attr, types.FunctionType)
-            and attr.__module__ == module.__name__]
+            and hasattr(attr, '__httpmethod__')]
 
 
 def get_methods(cls):
-    "get public methods of a class"
+    "get request handlers of a class"
     attrs = [getattr(cls, a) for a in dir(cls) if not a.startswith('_')]
-    return [attr for attr in attrs if isinstance(attr, types.FunctionType)]
+    return [attr for attr in attrs if isinstance(attr, types.FunctionType)
+            and hasattr(attr, '__httpmethod__')]
 
 
 def method(httpmethod):

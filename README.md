@@ -149,7 +149,7 @@ def destroy(product_id: str):
 ```python
 from klar import method
 
-@method('patch')  # default is GET
+@method('patch')
 def like(product_id):
 	return db.products.update({_id: product_id}, {'$inc': {'likes': 1}})
 

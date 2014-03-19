@@ -3,7 +3,7 @@ from setuptools import setup
 
 setup(
     name='klar',
-    version='0.0.3',
+    version='0.0.5',
     url='https://github.com/zweifisch/klar',
     keywords='micro web framework restful',
     license='MIT',

@@ -8,6 +8,7 @@ import inspect
 import logging
 import mimetypes
 from functools import partial, update_wrapper
+from collections import Iterable
 from urllib import parse
 import http.client
 from http.cookies import SimpleCookie
@@ -53,6 +54,10 @@ class App:
             return l
 
         self.provide('config', load_config)
+
+        @self.provide('json_encoder')
+        def json_encoder():
+            return JSONEncoder
 
         def route(method, pattern, handler=None):
             if handler is None:
@@ -129,7 +134,7 @@ class App:
         if body is None:
             body = ''
         if type(body) not in [str, bytes]:
-            body = json.dumps(body)
+            body = json.dumps(body, cls=self.provider.json_encoder)
             headers = {'Content-Type': 'application/json; charset=utf-8'}
         _headers.update(headers)
         if code == 200 and is_fresh(self.provider.environ, _headers):
@@ -247,6 +252,22 @@ class App:
             fs_root = url_root[1:]
         self.provider.router.append('GET', re.compile(
             "^" + url_root + "(?P<url>.+)$"), static_handler(fs_root))
+
+    def json_encode(self, t, encoder=None):
+        """specify custom json encode method
+
+        Example:
+
+            @json_enocode(ObjectId)
+            def encode_objectid(obj):
+                return str(obj)
+        """
+        if encoder is None:
+            return partial(self.json_encode, t)
+        self.provider.json_encoder.add_encoder(t, encoder)
+
+    def __repr__(self):
+        return repr(self.provider.router)
 
 
 class Provider:
@@ -579,6 +600,23 @@ class Response:
         self.body = body
         self.code = code
         self.headers = headers
+
+
+class JSONEncoder(json.JSONEncoder):
+
+    __custom_encoders__ = {}
+
+    @classmethod
+    def add_encoder(self, t, encode):
+        self.__custom_encoders__[t] = encode
+
+    def default(self, obj):
+        if isinstance(obj, Iterable):
+            return list(obj)
+        for t in self.__custom_encoders__:
+            if isinstance(obj, t):
+                return self.__custom_encoders__[t](obj)
+        return super().default(self, obj)
 
 
 def invoke(fn, *param_dicts):

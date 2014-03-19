@@ -340,3 +340,16 @@ get a link to previous handler
 def another_handler(router):
     href = router.path_for('user', id=3221)
 ```
+
+## custom json encoder
+
+```python
+from bson.objectid import ObjectId
+
+@app.json_encode(ObjectId)
+def encode_objectid(obj):
+    return str(obj)
+```
+
+by default `Iterable` is converted to `list`
+

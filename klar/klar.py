@@ -103,19 +103,23 @@ class App:
 
     def wsgi(self, environ, start_response):
         self.provider.environ = environ
+        res = self.provider.res
         try:
-            body, code, headers = self.process_request()
+            self.process_request()
         except HttpError as e:
-            code, body = e.args
-            headers = []
+            res.code, res.body = e.args
         except Exception as e:
-            body, code, headers = '', 500, []
+            res.code = 500
             self.provider.logger.error('Uncaught exception', exc_info=True)
 
-        self.provider.emitter.emit(code)
-        body, status, headers = self.format_response(body, code, headers)
+        try:
+            self.provider.emitter.emit(res.code)
+            body, status, headers = res.output()
+        except:
+            self.provider.logger.error('Uncaught exception', exc_info=True)
+            body, status, headers = '', '500 Internal Server Error', []
 
-        if code != 500:
+        if res.code != 500:
             if self.provider.accessed('session'):
                 self.provider.session.flush()
             if self.provider.accessed('cookies'):
@@ -126,81 +130,37 @@ class App:
         self.provider.reset_none_persist()
 
         start_response(status, headers)
-        if type(body) is str:
-            body = body.encode('utf-8')
         return [body]
 
-    def format_response(self, body, code, headers):
-        _headers = {'Content-Type': 'text/html; charset=utf-8'}
-        if body is None:
-            body = ''
-        if type(body) not in [str, bytes]:
-            body = json.dumps(body, cls=self.provider.json_encoder)
-            headers = {'Content-Type': 'application/json; charset=utf-8'}
-        _headers.update(headers)
-        if code == 200 and is_fresh(self.provider.environ, _headers):
-            code, body = 304, ''
-        return body, get_status(code), list(_headers.items())
-
     def process_request(self):
+        res = self.provider.res
         handler, params = self.provider.router.match(
             self.provider.req.method, self.provider.req.path)
         if not handler:
-            return '', 404, {}
+            res.code = 404
+            return
 
         params = dict(self.provider.req.query, **params)
         try:
             prepared_params = self.prepare_params(handler, params)
         except ValidationError as e:
-            return e.message, 400, {}
+            res.code = 400
+            res.body = e.message
+            return
         except SchemaError as e:
             self.provider.logger.error("Error in schema", exc_info=True)
-            return "Error in schema: " + e.message, 500, {}
+            res.code = 500
+            res.body = "Error in schema: %s" % e.message
+            return
 
-        response = self.normalize_response(handler(**prepared_params),
-                                           code=200)
+        res.from_handler(handler(**prepared_params))
 
         processers = handler.__annotations__.get('return')
-        if type(processers) is tuple:
-            response = self.process_response(response, *processers)
-        elif callable(processers):
-            response = self.process_response(response, processers)
-        return response['body'], response['code'], response['headers']
-
-    def normalize_response(self, response, **defaults):
-        body = defaults.get('body')
-        code = defaults.get('code')
-        headers = defaults.get('headers', {})
-        if type(response) == tuple:
-            for item in response:
-                if type(item) is tuple:
-                    key, value = item
-                    headers[key] = value
-                elif type(item) is int:
-                    code = item
-                else:
-                    body = item
-        elif type(response) == int:
-            code = response
-        else:
-            body = response
-        return dict(body=body, code=code, headers=headers)
-
-    def process_response(self, response, *processers):
-        for processer in processers:
-            args = get_args(processer)
-            if len(args) == 1:
-                response['body'] = processer(response['body'])
+        if processers is not None:
+            if type(processers) is tuple:
+                self.provider.res.pipe(*processers)
             else:
-                resp = invoke(processer, response, self.provider)
-                if resp:
-                    resp = self.normalize_response(resp)
-                    response['headers'].update(resp.pop('headers'))
-                    if resp['body'] is not None:
-                        response['body'] = resp['body']
-                    if resp['code'] is not None:
-                        response['code'] = resp['code']
-        return response
+                self.provider.res.pipe(processers)
 
     def prepare_params(self, handler, params):
         args = inspect.getargs(handler.__code__)[0]
@@ -268,7 +228,10 @@ class App:
         self.provider.json_encoder.add_encoder(t, encoder)
 
     def __repr__(self):
-        return repr(self.provider.router)
+        return '<App %s>' % self.name
+
+    def dump(self):
+        print(repr(self.provider.router))
 
 
 class Provider:
@@ -594,10 +557,55 @@ class RestfulRouter:
 
 
 class Response:
-    def __init__(self, body, code, headers):
-        self.body = body
-        self.code = code
-        self.headers = headers
+
+    def __init__(self, json_encoder, environ, provider):
+        self.body = None
+        self.code = 200
+        self.headers = {}
+        self.json_encoder = json_encoder
+        self.environ = environ
+        self.provider = provider
+
+    def output(self):
+        headers = {'Content-Type': 'text/html; charset=utf-8'}
+        body = '' if self.body is None else self.body
+        code = self.code
+        if type(body) not in [str, bytes]:
+            body = json.dumps(body, cls=self.json_encoder)
+            headers = {'Content-Type': 'application/json; charset=utf-8'}
+        headers.update(self.headers)
+        if self.code == 200 and is_fresh(self.environ, headers):
+            code, body = 304, ''
+        if type(body) is str:
+            body = body.encode('utf-8')
+        return body, get_status(code), list(headers.items())
+
+    def pipe(self, *processers):
+        for processer in processers:
+            args = get_args(processer)
+            if len(args) == 1 and args[0] != 'res':
+                self.body = processer(self.body)
+            else:
+                invoke(processer, self.provider)
+        return self
+
+    def from_handler(self, response):
+        if isinstance(response, tuple):
+            for item in response:
+                if type(item) is tuple:
+                    key, value = item
+                    self.headers[key] = value
+                elif type(item) is int:
+                    self.code = item
+                else:
+                    self.body = item
+        elif type(response) is int:
+            self.code = response
+        else:
+            self.body = response
+
+    def header(self, key, value):
+        self.headers[key] = value
 
 
 class JSONEncoder(json.JSONEncoder):
@@ -698,10 +706,11 @@ def load_config(logger):
         return {}
 
 
-def etag(code, body, req):
-    if code == 200 and body:
-        return ("Etag", "%X" %
-                (zlib.crc32(bytes(body, "utf-8")) & 0xFFFFFFFF)),
+def etag(res):
+    "add Etag to response header if response code is 200"
+    if res.code == 200 and res.body:
+        res.headers['Etag'] = "%X" % (zlib.crc32(bytes(res.body, "utf-8"))
+                                      & 0xFFFFFFFF)
 
 
 _etag_delimiter = re.compile(' *, *')

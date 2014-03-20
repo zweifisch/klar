@@ -274,18 +274,26 @@ class TestApp:
         def handle_200(cookies):
             cookies.set('code', 200)
 
+        @app.on(404)
+        def handle_404(res, req):
+            res.body = '%s not found' % req.path
+
         res = get(app, '/')
         assert res['cookies']['event'].value == 'visited'
         assert res['cookies']['code'].value == '200'
 
+        res = get(app, '/foo')
+        assert res['status'] == '404 Not Found'
+        assert res['body'] == '/foo not found'
+
     def test_response_processing(self):
         app = App()
 
-        def jsonp(body, req):
+        def jsonp(req, res):
             callback = req.query.get('callback')
             if callback:
-                body = "%s(%s)" % (callback, json.dumps(body))
-                return body, ("Content-Type", "application/javascript")
+                res.body = "%s(%s)" % (callback, json.dumps(res.body))
+                res.header("Content-Type", "application/javascript")
 
         @app.get('/')
         def handler() -> jsonp:

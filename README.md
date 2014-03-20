@@ -162,8 +162,9 @@ listening for an event
 
 ```python
 @on(404)
-def not_found(request):
-	print('%s not found' % request.path)
+def not_found(req, res):
+	print('%s not found' % req.path)
+    res.body = "%s not found on this server" % req.path
 ```
 
 ### custom events
@@ -185,12 +186,11 @@ def login(emitter):
 ## post processing
 
 ```python
-# special params: body, code, headers
-def jsonp(body, req):
+def jsonp(req, res):
     callback = req.query.get('callback')
     if callback:
-        body = "%s(%s)" % (callback, json.dumps(body))
-        return body, ("Content-Type", "application/javascript")
+        res.body = "%s(%s)" % (callback, json.dumps(body))
+        res.headers["Content-Type"] = "application/javascript"
 
 @app.get('/resource') -> jsonp:
 	return {"key": "value"}
@@ -199,7 +199,7 @@ def jsonp(body, req):
 more than one processors:
 
 ```python
-@app.get('/resource') -> (jsonp, etags):
+@app.get('/resource') -> (jsonp, etag):
 	return {"key": "value"}
 ```
 

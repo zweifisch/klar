@@ -28,8 +28,8 @@ class TestApp:
             return 'foo'
 
         @app.route('/bar', methods=['get', 'post', 'put'])
-        def bar(request):
-            return '%s: %s' % (request.method, request.path)
+        def bar(req):
+            return '%s: %s' % (req.method, req.path)
 
         assert get(app, '/')['body'] == 'index'
         assert get(app, '/foo')['body'] == 'foo'
@@ -281,8 +281,8 @@ class TestApp:
     def test_response_processing(self):
         app = App()
 
-        def jsonp(body, request):
-            callback = request.query.get('callback')
+        def jsonp(body, req):
+            callback = req.query.get('callback')
             if callback:
                 body = "%s(%s)" % (callback, json.dumps(body))
                 return body, ("Content-Type", "application/javascript")
@@ -303,8 +303,8 @@ class TestApp:
         app = App()
 
         @app.get('/api')
-        def ajax(request):
-            return "ajax" if request.is_ajax else "not ajax"
+        def ajax(req):
+            return "ajax" if req.is_ajax else "not ajax"
         res = get(app, '/api', headers={"X-Requested-With": "XMLHttpRequest"})
         assert res['body'] == 'ajax'
 
@@ -312,7 +312,7 @@ class TestApp:
         app = App()
 
         @app.get('/etag')
-        def handler(request) -> etag:
+        def handler(req) -> etag:
             return "content"
 
         res = get(app, '/etag')

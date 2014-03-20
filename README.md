@@ -95,7 +95,7 @@ def get_article(article_id:int, db, cache):
 
 predefined components:
 
-* request
+* req
 * session
 * cookie
 * router
@@ -186,8 +186,8 @@ def login(emitter):
 
 ```python
 # special params: body, code, headers
-def jsonp(body, request):
-    callback = request.query.get('callback')
+def jsonp(body, req):
+    callback = req.query.get('callback')
     if callback:
         body = "%s(%s)" % (callback, json.dumps(body))
         return body, ("Content-Type", "application/javascript")

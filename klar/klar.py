@@ -31,7 +31,8 @@ class App:
             rest=RestfulRouter,
             emitter=EventEmitter,
         )
-        self.provide('request', Request, on_request=True)
+        self.provide('req', Request, on_request=True)
+        self.provide('res', Response, on_request=True)
         self.provide('cookies', Cookies, on_request=True)
         self.provide('session', Session, on_request=True)
 
@@ -40,12 +41,12 @@ class App:
             return self.provider
 
         @self.provide('body', on_request=True)
-        def body(request):
-            return request.body
+        def body(req):
+            return req.body
 
         @self.provide('uploads', on_request=True)
-        def uploads(request):
-            return request.uploads
+        def uploads(req):
+            return req.uploads
 
         @self.provide('logger')
         def logger():
@@ -143,11 +144,11 @@ class App:
 
     def process_request(self):
         handler, params = self.provider.router.match(
-            self.provider.request.method, self.provider.request.path)
+            self.provider.req.method, self.provider.req.path)
         if not handler:
             return '', 404, {}
 
-        params = dict(self.provider.request.query, **params)
+        params = dict(self.provider.req.query, **params)
         try:
             prepared_params = self.prepare_params(handler, params)
         except ValidationError as e:
@@ -697,7 +698,7 @@ def load_config(logger):
         return {}
 
 
-def etag(code, body, request):
+def etag(code, body, req):
     if code == 200 and body:
         return ("Etag", "%X" %
                 (zlib.crc32(bytes(body, "utf-8")) & 0xFFFFFFFF)),

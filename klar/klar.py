@@ -7,7 +7,7 @@ import random
 import inspect
 import logging
 import mimetypes
-from functools import partial, update_wrapper
+from functools import partial, update_wrapper, wraps
 from collections import Iterable
 from urllib import parse
 import http.client
@@ -759,3 +759,29 @@ def method(httpmethod):
         fn.__httpmethod__ = httpmethod.upper()
         return fn
     return add_method
+
+
+def cache_control(*args, **kwargs):
+    """decorator to specify Cache-Control header
+
+    Example:
+
+        @get('/')
+        @cache_control('public', max_age=60)
+        def home():
+            pass
+    """
+    def decorator(handler):
+        @wraps(handler)
+        def wrapper(*a, **k):
+            value = args + tuple(['%s=%s' % i for i in kwargs.items()])
+            response = handler(*a, **k)
+            header = 'Cache-Control', ', '.join(value).replace('_', '-')
+            if response:
+                if type(response) is tuple:
+                    return response + (header,)
+                else:
+                    return (response, header)
+            return (header,)
+        return wrapper
+    return decorator

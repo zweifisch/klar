@@ -424,6 +424,13 @@ class Session:
 
     def load(self, sid):
         data = self.cache.get(self.key_prefix + sid)
+        if data and type(data) is not dict:
+            try:
+                if type(data) is not str:
+                    data = data.decode()
+                data = json.loads(data)
+            except:
+                raise Exception("Failed to unserialize session data")
         self.data = data or {}
         return data
 
@@ -447,7 +454,11 @@ class Session:
 
     def flush(self):
         if self.is_dirty:
-            self.cache.set(self.key_prefix + self.sid, self.data)
+            try:
+                data = json.dumps(self.data)
+            except:
+                raise Exception("Failed to serialize session data")
+            self.cache.set(self.key_prefix + self.sid, data)
             self.is_dirty = False
 
 
@@ -622,7 +633,7 @@ class JSONEncoder(json.JSONEncoder):
                 return self.__custom_encoders__[t](obj)
         if isinstance(obj, Iterable):
             return list(obj)
-        return super().default(self, obj)
+        return super().default(obj)
 
 
 def invoke(fn, *param_dicts):
@@ -788,7 +799,7 @@ def cache_control(*args, **kwargs):
 
 
 def env(enviroment, fn=None):
-    """decorator
+    """run conditional code for specified enviroment read from $KLAR_ENV
 
     Example:
 

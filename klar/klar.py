@@ -785,3 +785,21 @@ def cache_control(*args, **kwargs):
             return (header,)
         return wrapper
     return decorator
+
+
+def env(enviroment, fn=None):
+    """decorator
+
+    Example:
+
+        @env('production')
+        def config_for_production():
+            @app.provide('db')
+            def db():
+                pass
+    """
+    if fn is None:
+        return partial(env, enviroment)
+    if os.environ.get('KLAR_ENV') == enviroment:
+        fn()
+    return fn
